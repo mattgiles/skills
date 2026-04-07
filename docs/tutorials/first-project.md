@@ -2,8 +2,6 @@
 
 This tutorial walks through the first successful `skills` workflow with a local Git repo. It uses the new standardized project layout:
 
-- `AGENTS.md`
-- `CLAUDE.md`
 - `.agents/manifest.yaml`
 - `.agents/skills/`
 - `.claude/skills/`

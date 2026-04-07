@@ -15,8 +15,6 @@ This creates:
 - `.agents/manifest.yaml`
 - `.agents/skills/`
 - `.claude/skills/`
-- `AGENTS.md` if missing
-- `CLAUDE.md` if missing
 
 ## Add The Required Sections
 

@@ -130,13 +130,20 @@ func TestProjectInitCreatesStandardizedWorkspace(t *testing.T) {
 
 	for _, path := range []string{
 		filepath.Join(projectDir, ".agents", "manifest.yaml"),
-		filepath.Join(projectDir, "AGENTS.md"),
-		filepath.Join(projectDir, "CLAUDE.md"),
 		filepath.Join(projectDir, ".agents", "skills"),
 		filepath.Join(projectDir, ".claude", "skills"),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected path %q: %v", path, err)
+		}
+	}
+
+	for _, path := range []string{
+		filepath.Join(projectDir, "AGENTS.md"),
+		filepath.Join(projectDir, "CLAUDE.md"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("did not expect %q to be created, got err=%v", path, err)
 		}
 	}
 }

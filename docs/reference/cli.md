@@ -87,8 +87,6 @@ Creates a project-local standardized workspace:
 - `.agents/manifest.yaml`
 - `.agents/skills/`
 - `.claude/skills/`
-- `AGENTS.md` if missing
-- `CLAUDE.md` if missing
 
 ## `skills project status`
 

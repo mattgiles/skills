@@ -19,18 +19,14 @@ import (
 )
 
 const (
-	ManifestFilename      = ".agents/manifest.yaml"
-	StateFilename         = ".agents/state.yaml"
-	SkillsDirname         = ".agents/skills"
-	ClaudeSkillsDirname   = ".claude/skills"
-	AgentsFilename        = "AGENTS.md"
-	ClaudeFilename        = "CLAUDE.md"
-	homeManifestFilename  = "manifest.yaml"
-	homeStateFilename     = "state.yaml"
-	defaultAgentsContents = "# AGENTS.md\n"
-	defaultClaudeContents = "@AGENTS.md\n"
-	projectWorkspaceName  = "project"
-	sharedWorkspaceName   = "home"
+	ManifestFilename     = ".agents/manifest.yaml"
+	StateFilename        = ".agents/state.yaml"
+	SkillsDirname        = ".agents/skills"
+	ClaudeSkillsDirname  = ".claude/skills"
+	homeManifestFilename = "manifest.yaml"
+	homeStateFilename    = "state.yaml"
+	projectWorkspaceName = "project"
+	sharedWorkspaceName  = "home"
 )
 
 type Manifest struct {
@@ -127,8 +123,6 @@ type workspace struct {
 	StatePath       string
 	SkillsDir       string
 	ClaudeSkillsDir string
-	AgentsPath      string
-	ClaudePath      string
 }
 
 type desiredLink struct {
@@ -179,14 +173,6 @@ func ClaudeSkillsDir(projectDir string) string {
 	return filepath.Join(projectDir, ClaudeSkillsDirname)
 }
 
-func AgentsPath(projectDir string) string {
-	return filepath.Join(projectDir, AgentsFilename)
-}
-
-func ClaudePath(projectDir string) string {
-	return filepath.Join(projectDir, ClaudeFilename)
-}
-
 func HomeManifestPath(cfg config.Config) (string, error) {
 	ws, err := homeWorkspace(cfg)
 	if err != nil {
@@ -212,12 +198,6 @@ func InitProject(projectDir string) error {
 		return err
 	}
 	if err := os.MkdirAll(ws.ClaudeSkillsDir, 0o755); err != nil {
-		return err
-	}
-	if err := ensureFile(ws.AgentsPath, defaultAgentsContents); err != nil {
-		return err
-	}
-	if err := ensureFile(ws.ClaudePath, defaultClaudeContents); err != nil {
 		return err
 	}
 	return nil
@@ -418,8 +398,6 @@ func projectWorkspace(projectDir string) workspace {
 		StatePath:       StatePath(projectDir),
 		SkillsDir:       SkillsDir(projectDir),
 		ClaudeSkillsDir: ClaudeSkillsDir(projectDir),
-		AgentsPath:      AgentsPath(projectDir),
-		ClaudePath:      ClaudePath(projectDir),
 	}
 }
 
@@ -1472,18 +1450,6 @@ func ensureManifestDefaults(manifest *Manifest) {
 	if manifest.Skills == nil {
 		manifest.Skills = []ManifestSkill{}
 	}
-}
-
-func ensureFile(path string, contents string) error {
-	if _, err := os.Stat(path); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte(contents), 0o644)
 }
 
 func sanitizeIDComponent(value string) string {

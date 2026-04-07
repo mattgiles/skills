@@ -2,7 +2,7 @@
 
 `skills` is a Go CLI for managing reusable agent skills from Git repositories.
 
-It keeps canonical source clones in a configurable repo store, resolves refs to pinned worktrees, and exposes installed skills as symlinks in canonical `.agents/skills` directories. It also manages Claude compatibility shims by creating `CLAUDE.md` and `.claude/skills` adapter links.
+It keeps canonical source clones in a configurable repo store, resolves refs to pinned worktrees, and exposes installed skills as symlinks in canonical `.agents/skills` directories. It also manages `.claude/skills` adapter links for Claude skill compatibility.
 
 ## Install
 
@@ -35,8 +35,6 @@ The installer downloads a prebuilt binary from GitHub Releases, verifies its che
 ## Standard Model
 
 - Project scope:
-  - `AGENTS.md`
-  - `CLAUDE.md`
   - `.agents/manifest.yaml`
   - `.agents/state.yaml`
   - `.agents/skills/<skill-name>`
