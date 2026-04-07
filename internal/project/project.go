@@ -74,6 +74,8 @@ type SourceReport struct {
 	Ref            string
 	Commit         string
 	PreviousCommit string
+	RepoPath       string
+	WorktreePath   string
 	Status         string
 	Message        string
 }
@@ -597,6 +599,7 @@ func resolveSourcesForStatus(ctx context.Context, resolvedSources map[string]*re
 			Alias:          src.Alias,
 			Ref:            src.Ref,
 			PreviousCommit: shortCommit(prev.ResolvedCommit),
+			RepoPath:       src.RepoPath,
 		}
 
 		switch {
@@ -637,6 +640,7 @@ func resolveSourcesForStatus(ctx context.Context, resolvedSources map[string]*re
 		setDesiredCommitForStatus(src, hasPrev, prev)
 		if status.Exists && status.IsGitRepo && strings.TrimSpace(src.DesiredCommit) != "" {
 			src.WorktreePath = source.WorktreePath(src.WorktreeRoot, src.ProjectID, src.Alias, src.DesiredCommit)
+			report.WorktreePath = src.WorktreePath
 			skillsByName, inspectErr := loadSkillsForCommit(ctx, src)
 			if inspectErr != nil {
 				src.InspectError = inspectErr.Error()
@@ -670,6 +674,7 @@ func resolveSourcesForSync(ctx context.Context, resolvedSources map[string]*reso
 			Alias:          src.Alias,
 			Ref:            src.Ref,
 			PreviousCommit: shortCommit(prev.ResolvedCommit),
+			RepoPath:       src.RepoPath,
 		}
 
 		switch {
@@ -709,6 +714,7 @@ func resolveSourcesForSync(ctx context.Context, resolvedSources map[string]*reso
 
 		if status.Exists && status.IsGitRepo && strings.TrimSpace(src.DesiredCommit) != "" {
 			src.WorktreePath = source.WorktreePath(src.WorktreeRoot, src.ProjectID, src.Alias, src.DesiredCommit)
+			report.WorktreePath = src.WorktreePath
 			skillsByName, inspectErr := loadSkillsForCommit(ctx, src)
 			if inspectErr != nil {
 				src.InspectError = inspectErr.Error()
@@ -750,6 +756,7 @@ func resolveSourcesForUpdate(ctx context.Context, resolvedSources map[string]*re
 			Alias:          src.Alias,
 			Ref:            src.Ref,
 			PreviousCommit: shortCommit(prev.ResolvedCommit),
+			RepoPath:       src.RepoPath,
 		}
 
 		switch {
@@ -771,6 +778,7 @@ func resolveSourcesForUpdate(ctx context.Context, resolvedSources map[string]*re
 			} else {
 				src.CurrentCommit = commit
 				report.Commit = shortCommit(commit)
+				report.WorktreePath = source.WorktreePath(src.WorktreeRoot, src.ProjectID, src.Alias, commit)
 				switch {
 				case !hasPrev || strings.TrimSpace(prev.ResolvedCommit) == "":
 					report.Status = "resolved"

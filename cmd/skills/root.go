@@ -24,6 +24,8 @@ func newRootCommand() *cobra.Command {
 		SilenceErrors: true,
 	}
 
+	cmd.PersistentFlags().Bool("verbose", false, "Show detailed diagnostic output")
+
 	cmd.AddCommand(newConfigCommand())
 	cmd.AddCommand(newSourceCommand())
 	cmd.AddCommand(newSkillCommand())
@@ -134,14 +136,22 @@ func newSourceListCommand() *cobra.Command {
 			}
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "ALIAS\tSTATUS\tREMOTE\tLOCAL\tPATH\tURL")
+			if verboseEnabled(cmd) {
+				fmt.Fprintln(w, "ALIAS\tSTATUS\tREMOTE\tLOCAL\tPATH\tURL")
+			} else {
+				fmt.Fprintln(w, "ALIAS\tSTATUS\tREMOTE\tLOCAL")
+			}
 
 			for _, src := range sources {
 				status := source.Status(context.Background(), src)
 				state := renderSourceState(status)
 				remote := renderRemoteHead(status)
 				local := renderLocalHead(status)
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", src.Alias, state, remote, local, src.RepoPath, src.URL)
+				if verboseEnabled(cmd) {
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", src.Alias, state, remote, local, src.RepoPath, src.URL)
+				} else {
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", src.Alias, state, remote, local)
+				}
 			}
 
 			return w.Flush()
@@ -170,6 +180,46 @@ func newSourceSyncCommand() *cobra.Command {
 			if len(selected) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "no sources configured")
 				return nil
+			}
+
+			if verboseEnabled(cmd) {
+				type syncResult struct {
+					action string
+					source source.Source
+					status source.SourceStatus
+				}
+
+				results := make([]syncResult, 0, len(selected))
+				for _, src := range selected {
+					cloned, err := source.Sync(context.Background(), src)
+					if err != nil {
+						return fmt.Errorf("sync %s: %w", src.Alias, err)
+					}
+
+					action := "fetched"
+					if cloned {
+						action = "cloned"
+					}
+					results = append(results, syncResult{
+						action: action,
+						source: src,
+						status: source.Status(context.Background(), src),
+					})
+				}
+
+				w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+				fmt.Fprintln(w, "ACTION\tALIAS\tREMOTE\tLOCAL\tPATH\tURL")
+				for _, result := range results {
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+						result.action,
+						result.source.Alias,
+						renderRemoteHead(result.status),
+						renderLocalHead(result.status),
+						result.source.RepoPath,
+						result.source.URL,
+					)
+				}
+				return w.Flush()
 			}
 
 			for _, src := range selected {
@@ -252,9 +302,17 @@ func newSkillCommand() *cobra.Command {
 			})
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "SOURCE\tNAME\tPATH")
+			if verboseEnabled(cmd) {
+				fmt.Fprintln(w, "SOURCE\tNAME\tPATH\tABS_PATH")
+			} else {
+				fmt.Fprintln(w, "SOURCE\tNAME\tPATH")
+			}
 			for _, skill := range skills {
-				fmt.Fprintf(w, "%s\t%s\t%s\n", skill.SourceAlias, skill.Name, skill.RelativePath)
+				if verboseEnabled(cmd) {
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", skill.SourceAlias, skill.Name, skill.RelativePath, skill.Path)
+				} else {
+					fmt.Fprintf(w, "%s\t%s\t%s\n", skill.SourceAlias, skill.Name, skill.RelativePath)
+				}
 			}
 			return w.Flush()
 		},
@@ -387,4 +445,13 @@ func renderLocalHead(status source.SourceStatus) string {
 	}
 
 	return status.HeadRef + "@" + commit
+}
+
+func verboseEnabled(cmd *cobra.Command) bool {
+	value, err := cmd.Flags().GetBool("verbose")
+	if err == nil {
+		return value
+	}
+	value, err = cmd.InheritedFlags().GetBool("verbose")
+	return err == nil && value
 }

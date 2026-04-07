@@ -15,6 +15,12 @@ tidy:
 test:
   go test ./...
 
+snapshot:
+  go test ./cmd/skills -run TestMarkdownSnapshots
+
+snapshot-live:
+  RUN_LIVE_SNAPSHOT_TESTS=1 go test ./cmd/skills -run TestMarkdownSnapshots
+
 check: fmt-check test
 
 build:

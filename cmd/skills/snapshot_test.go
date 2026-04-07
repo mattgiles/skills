@@ -1,0 +1,544 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"testing"
+)
+
+var (
+	headingPattern   = regexp.MustCompile(`^(#{1,6})\s+(.*\S)\s*$`)
+	pathLabelPattern = regexp.MustCompile("^`([^`]+)`:\\s*$")
+	fencePattern     = regexp.MustCompile("^```(.*)$")
+	exitPattern      = regexp.MustCompile(`^<!--\s*exit:\s*(\d+)\s*-->\s*$`)
+	shaPattern       = regexp.MustCompile(`\b[0-9a-fA-F]{7,40}\b`)
+	repoPattern      = regexp.MustCompile(`^repo\s+([a-zA-Z0-9._-]+)$`)
+	commitPattern    = regexp.MustCompile(`^commit\s+"([^"]+)"\s*$`)
+	tagPattern       = regexp.MustCompile(`^tag\s+"([^"]+)"\s*$`)
+	branchPattern    = regexp.MustCompile(`^branch\s+"([^"]+)"\s*$`)
+)
+
+type snapshotSuite struct {
+	Path  string
+	Cases []snapshotCase
+}
+
+type snapshotCase struct {
+	Name  string
+	Steps []snapshotStep
+}
+
+type snapshotStep interface {
+	isSnapshotStep()
+}
+
+type fileStep struct {
+	Path    string
+	Content string
+}
+
+func (fileStep) isSnapshotStep() {}
+
+type repoStep struct {
+	Name string
+	Ops  []repoOp
+}
+
+func (repoStep) isSnapshotStep() {}
+
+type repoOp struct {
+	Kind  string
+	Value string
+}
+
+type commandStep struct {
+	Command    string
+	WantStdout string
+	WantStderr string
+	WantExit   int
+}
+
+func (*commandStep) isSnapshotStep() {}
+
+type snapshotEnv struct {
+	testEnv
+	root       string
+	projectDir string
+	reposDir   string
+}
+
+func TestMarkdownSnapshots(t *testing.T) {
+	requireGit(t)
+
+	localSuites, err := loadSnapshotSuites(filepath.Join("testdata", "snapshots", "local"))
+	if err != nil {
+		t.Fatalf("load local snapshot suites: %v", err)
+	}
+	runSnapshotSuites(t, localSuites)
+
+	if os.Getenv("RUN_LIVE_SNAPSHOT_TESTS") != "1" {
+		t.Log("set RUN_LIVE_SNAPSHOT_TESTS=1 to run live GitHub snapshot suites")
+		return
+	}
+
+	liveSuites, err := loadSnapshotSuites(filepath.Join("testdata", "snapshots", "live"))
+	if err != nil {
+		t.Fatalf("load live snapshot suites: %v", err)
+	}
+	runSnapshotSuites(t, liveSuites)
+}
+
+func runSnapshotSuites(t *testing.T, suites []snapshotSuite) {
+	for _, suite := range suites {
+		suite := suite
+		suiteName := strings.TrimSuffix(filepath.Base(suite.Path), filepath.Ext(suite.Path))
+		t.Run(suiteName, func(t *testing.T) {
+			for _, tc := range suite.Cases {
+				tc := tc
+				t.Run(tc.Name, func(t *testing.T) {
+					runSnapshotCase(t, tc)
+				})
+			}
+		})
+	}
+}
+
+func runSnapshotCase(t *testing.T, tc snapshotCase) {
+	env := newSnapshotEnv(t)
+
+	for _, step := range tc.Steps {
+		switch step := step.(type) {
+		case fileStep:
+			path, err := resolveSnapshotPath(env, step.Path)
+			if err != nil {
+				t.Fatalf("resolve path %q: %v", step.Path, err)
+			}
+			writeSnapshotFile(t, path, substituteSnapshotVars(step.Content, env))
+		case repoStep:
+			applyRepoStep(t, env, step)
+		case *commandStep:
+			runSnapshotCommand(t, env, tc.Name, step)
+		default:
+			t.Fatalf("unknown snapshot step type %T", step)
+		}
+	}
+}
+
+func newSnapshotEnv(t *testing.T) snapshotEnv {
+	t.Helper()
+
+	root := resolvedPath(t, t.TempDir())
+	env := snapshotEnv{
+		testEnv: testEnv{
+			configHome: filepath.Join(root, "xdg-config"),
+			dataHome:   filepath.Join(root, "xdg-data"),
+			home:       filepath.Join(root, "home"),
+		},
+		root:       root,
+		projectDir: filepath.Join(root, "project"),
+		reposDir:   filepath.Join(root, "repos"),
+	}
+
+	for _, path := range []string{env.configHome, env.dataHome, env.home, env.projectDir, env.reposDir} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatalf("MkdirAll(%q): %v", path, err)
+		}
+	}
+
+	return env
+}
+
+func runSnapshotCommand(t *testing.T, env snapshotEnv, caseName string, step *commandStep) {
+	t.Helper()
+
+	args, err := splitCommandLine(substituteSnapshotVars(step.Command, env))
+	if err != nil {
+		t.Fatalf("parse command %q: %v", step.Command, err)
+	}
+	if len(args) == 0 || args[0] != "skills" {
+		t.Fatalf("command must start with \"skills\": %q", step.Command)
+	}
+
+	stdout, stderr, err := executeCommandInDir(t, env.testEnv, env.projectDir, args[1:]...)
+	gotExit := 0
+	if err != nil {
+		gotExit = 1
+	}
+	if gotExit != step.WantExit {
+		t.Fatalf("%s: exit = %d, want %d\nstdout:\n%s\nstderr:\n%s", caseName, gotExit, step.WantExit, stdout, stderr)
+	}
+
+	wantStdout := normalizeSnapshotText(substituteSnapshotVars(step.WantStdout, env), env)
+	gotStdout := normalizeSnapshotText(stdout, env)
+	if gotStdout != wantStdout {
+		t.Fatalf("%s: stdout mismatch\nwant:\n%s\n\ngot:\n%s", caseName, wantStdout, gotStdout)
+	}
+
+	wantStderr := normalizeSnapshotText(substituteSnapshotVars(step.WantStderr, env), env)
+	gotStderr := normalizeSnapshotText(stderr, env)
+	if gotStderr != wantStderr {
+		t.Fatalf("%s: stderr mismatch\nwant:\n%s\n\ngot:\n%s", caseName, wantStderr, gotStderr)
+	}
+}
+
+func applyRepoStep(t *testing.T, env snapshotEnv, step repoStep) {
+	t.Helper()
+
+	repoDir := filepath.Join(env.reposDir, step.Name)
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", repoDir, err)
+	}
+
+	if _, err := os.Stat(filepath.Join(repoDir, ".git")); os.IsNotExist(err) {
+		runGit(t, repoDir, "init", "-b", "main")
+		runGit(t, repoDir, "config", "user.name", "Codex Snapshot")
+		runGit(t, repoDir, "config", "user.email", "codex@example.com")
+	} else if err != nil {
+		t.Fatalf("Stat(%q): %v", filepath.Join(repoDir, ".git"), err)
+	}
+
+	for _, op := range step.Ops {
+		switch op.Kind {
+		case "commit":
+			runGit(t, repoDir, "add", ".")
+			runGit(t, repoDir, "commit", "--allow-empty", "-m", op.Value)
+		case "tag":
+			runGit(t, repoDir, "tag", op.Value)
+		case "branch":
+			runGit(t, repoDir, "branch", op.Value)
+		default:
+			t.Fatalf("unknown repo op %q", op.Kind)
+		}
+	}
+}
+
+func loadSnapshotSuites(dir string) ([]snapshotSuite, error) {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	suites := make([]snapshotSuite, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".md" {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		suite, err := parseSnapshotSuite(path)
+		if err != nil {
+			return nil, err
+		}
+		suites = append(suites, suite)
+	}
+	return suites, nil
+}
+
+func parseSnapshotSuite(path string) (snapshotSuite, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return snapshotSuite{}, err
+	}
+
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	suite := snapshotSuite{Path: path}
+	headings := []string{}
+	var current *snapshotCase
+	var lastCommand *commandStep
+	var pendingPath string
+	var pendingExit *int
+
+	finalize := func() {
+		if current == nil {
+			return
+		}
+		hasCommand := false
+		for _, step := range current.Steps {
+			if _, ok := step.(*commandStep); ok {
+				hasCommand = true
+				break
+			}
+		}
+		if hasCommand {
+			suite.Cases = append(suite.Cases, *current)
+		}
+		current = nil
+		lastCommand = nil
+	}
+
+	ensureCurrent := func() error {
+		if current != nil {
+			return nil
+		}
+		if len(headings) == 0 {
+			return fmt.Errorf("%s: found content before any heading", path)
+		}
+		current = &snapshotCase{Name: strings.Join(headings, " / ")}
+		return nil
+	}
+
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+
+		if matches := headingPattern.FindStringSubmatch(line); matches != nil {
+			finalize()
+			level := len(matches[1])
+			title := matches[2]
+			if level <= len(headings) {
+				headings = append(headings[:level-1], title)
+			} else {
+				headings = append(headings, title)
+			}
+			continue
+		}
+
+		if matches := exitPattern.FindStringSubmatch(trimmed); matches != nil {
+			value, err := strconv.Atoi(matches[1])
+			if err != nil {
+				return snapshotSuite{}, fmt.Errorf("%s:%d: invalid exit directive: %w", path, i+1, err)
+			}
+			pendingExit = &value
+			continue
+		}
+
+		if matches := pathLabelPattern.FindStringSubmatch(line); matches != nil {
+			if err := ensureCurrent(); err != nil {
+				return snapshotSuite{}, err
+			}
+			pendingPath = matches[1]
+			continue
+		}
+
+		matches := fencePattern.FindStringSubmatch(line)
+		if matches == nil {
+			return snapshotSuite{}, fmt.Errorf("%s:%d: unsupported line outside block: %s", path, i+1, line)
+		}
+		if err := ensureCurrent(); err != nil {
+			return snapshotSuite{}, err
+		}
+
+		info := strings.TrimSpace(matches[1])
+		startLine := i + 1
+		i++
+		blockLines := []string{}
+		for ; i < len(lines); i++ {
+			if fencePattern.MatchString(lines[i]) && strings.TrimSpace(lines[i]) == "```" {
+				break
+			}
+			blockLines = append(blockLines, lines[i])
+		}
+		if i >= len(lines) {
+			return snapshotSuite{}, fmt.Errorf("%s:%d: unterminated fenced block", path, startLine)
+		}
+
+		content := strings.Join(blockLines, "\n")
+		switch {
+		case pendingPath != "":
+			current.Steps = append(current.Steps, fileStep{Path: pendingPath, Content: content})
+			pendingPath = ""
+			lastCommand = nil
+		case info == "command":
+			step := &commandStep{
+				Command:  strings.TrimSpace(content),
+				WantExit: 0,
+			}
+			if pendingExit != nil {
+				step.WantExit = *pendingExit
+				pendingExit = nil
+			}
+			current.Steps = append(current.Steps, step)
+			lastCommand = step
+		case info == "stdout":
+			if lastCommand == nil {
+				return snapshotSuite{}, fmt.Errorf("%s:%d: stdout block must follow a command block", path, startLine)
+			}
+			lastCommand.WantStdout = content
+		case info == "stderr":
+			if lastCommand == nil {
+				return snapshotSuite{}, fmt.Errorf("%s:%d: stderr block must follow a command block", path, startLine)
+			}
+			lastCommand.WantStderr = content
+		default:
+			repoMatches := repoPattern.FindStringSubmatch(info)
+			if repoMatches == nil {
+				return snapshotSuite{}, fmt.Errorf("%s:%d: unsupported fenced block %q", path, startLine, info)
+			}
+			ops, err := parseRepoOps(content)
+			if err != nil {
+				return snapshotSuite{}, fmt.Errorf("%s:%d: %w", path, startLine, err)
+			}
+			current.Steps = append(current.Steps, repoStep{Name: repoMatches[1], Ops: ops})
+			lastCommand = nil
+		}
+	}
+
+	finalize()
+	return suite, nil
+}
+
+func parseRepoOps(content string) ([]repoOp, error) {
+	lines := strings.Split(content, "\n")
+	ops := make([]repoOp, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		switch {
+		case commitPattern.MatchString(line):
+			ops = append(ops, repoOp{Kind: "commit", Value: commitPattern.FindStringSubmatch(line)[1]})
+		case tagPattern.MatchString(line):
+			ops = append(ops, repoOp{Kind: "tag", Value: tagPattern.FindStringSubmatch(line)[1]})
+		case branchPattern.MatchString(line):
+			ops = append(ops, repoOp{Kind: "branch", Value: branchPattern.FindStringSubmatch(line)[1]})
+		default:
+			return nil, fmt.Errorf("unsupported repo op %q", line)
+		}
+	}
+	return ops, nil
+}
+
+func resolveSnapshotPath(env snapshotEnv, label string) (string, error) {
+	parts := strings.SplitN(filepath.ToSlash(label), "/", 3)
+	if len(parts) < 2 {
+		return "", fmt.Errorf("path %q must start with a root like project/ or repo/", label)
+	}
+
+	switch parts[0] {
+	case "project":
+		return filepath.Join(env.projectDir, parts[1], strings.TrimPrefix(strings.Join(parts[2:], "/"), "/")), nil
+	case "config":
+		return filepath.Join(env.configHome, "skills", parts[1], strings.TrimPrefix(strings.Join(parts[2:], "/"), "/")), nil
+	case "data":
+		return filepath.Join(env.dataHome, "skills", parts[1], strings.TrimPrefix(strings.Join(parts[2:], "/"), "/")), nil
+	case "home":
+		return filepath.Join(env.home, parts[1], strings.TrimPrefix(strings.Join(parts[2:], "/"), "/")), nil
+	case "repo":
+		if len(parts) < 3 {
+			return "", fmt.Errorf("repo path %q must include a repo name and file path", label)
+		}
+		return filepath.Join(env.reposDir, parts[1], parts[2]), nil
+	default:
+		return "", fmt.Errorf("unsupported snapshot path root %q", parts[0])
+	}
+}
+
+func writeSnapshotFile(t *testing.T, path string, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", path, err)
+	}
+}
+
+func substituteSnapshotVars(value string, env snapshotEnv) string {
+	replacements := map[string]string{
+		"{{project}}": env.projectDir,
+		"{{config}}":  filepath.Join(env.configHome, "skills"),
+		"{{data}}":    filepath.Join(env.dataHome, "skills"),
+		"{{home}}":    env.home,
+		"{{repos}}":   env.reposDir,
+	}
+	for token, replacement := range replacements {
+		value = strings.ReplaceAll(value, token, replacement)
+	}
+
+	return regexp.MustCompile(`\{\{repo:([a-zA-Z0-9._-]+)\}\}`).ReplaceAllStringFunc(value, func(match string) string {
+		name := regexp.MustCompile(`\{\{repo:([a-zA-Z0-9._-]+)\}\}`).FindStringSubmatch(match)[1]
+		return filepath.Join(env.reposDir, name)
+	})
+}
+
+func normalizeSnapshotText(value string, env snapshotEnv) string {
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+
+	replacements := []struct {
+		from string
+		to   string
+	}{
+		{env.projectDir, "<project>"},
+		{filepath.Join(env.configHome, "skills"), "<config>"},
+		{filepath.Join(env.dataHome, "skills"), "<data>"},
+		{env.reposDir, "<repos>"},
+		{env.home, "<home>"},
+		{env.root, "<tmp>"},
+	}
+	for _, replacement := range replacements {
+		value = strings.ReplaceAll(value, replacement.from, replacement.to)
+	}
+
+	value = shaPattern.ReplaceAllString(value, "<sha>")
+
+	lines := strings.Split(value, "\n")
+	for i, line := range lines {
+		line = strings.TrimRight(line, " \t")
+		if line == "" {
+			lines[i] = ""
+			continue
+		}
+		lines[i] = strings.Join(strings.Fields(line), " ")
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func splitCommandLine(value string) ([]string, error) {
+	args := []string{}
+	var current strings.Builder
+	var quote rune
+	escaped := false
+
+	flush := func() {
+		if current.Len() == 0 {
+			return
+		}
+		args = append(args, current.String())
+		current.Reset()
+	}
+
+	for _, r := range value {
+		switch {
+		case escaped:
+			current.WriteRune(r)
+			escaped = false
+		case r == '\\':
+			escaped = true
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				current.WriteRune(r)
+			}
+		case r == '\'' || r == '"':
+			quote = r
+		case r == '\n':
+			if current.Len() != 0 {
+				flush()
+			}
+		case r == ' ' || r == '\t':
+			flush()
+		default:
+			current.WriteRune(r)
+		}
+	}
+
+	if escaped {
+		return nil, fmt.Errorf("trailing escape in command %q", value)
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("unterminated quote in command %q", value)
+	}
+	flush()
+	return args, nil
+}
