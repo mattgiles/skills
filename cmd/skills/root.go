@@ -31,6 +31,7 @@ func newRootCommand() *cobra.Command {
 	cmd.AddCommand(newSkillCommand())
 	cmd.AddCommand(newHomeCommand())
 	cmd.AddCommand(newProjectCommand())
+	cmd.AddCommand(newVersionCommand())
 
 	return cmd
 }

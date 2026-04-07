@@ -1,42 +1,56 @@
 # Install The CLI
 
-`skills` is currently built from source.
+The public install path uses GitHub Releases plus a shell installer.
 
-## Prerequisites
+V1 platform support:
 
-- Go
-- Git
+- macOS arm64
+- macOS amd64
 
-## Build A Local Binary
+## Install The Latest Release
 
-From the repository root:
+```bash
+curl -fsSL https://raw.githubusercontent.com/mattgiles/skills/main/scripts/install.sh | sh
+```
+
+## Install A Specific Version
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mattgiles/skills/main/scripts/install.sh | VERSION=v0.1.0 sh
+```
+
+## What The Installer Does
+
+- detects your macOS architecture
+- downloads the matching release archive from GitHub Releases
+- downloads and verifies the published checksums file
+- installs `skills` into a writable directory already on `PATH` when possible
+- falls back to `~/.local/bin` or `~/bin` with a clear `PATH` hint when needed
+
+## Verify The Install
+
+```bash
+skills version
+skills --help
+```
+
+## Build From Source
+
+Source builds are still available for contributors:
 
 ```bash
 mkdir -p ./bin
 go build -o ./bin/skills ./cmd/skills
-```
-
-Verify the binary:
-
-```bash
-./bin/skills --help
-```
-
-## Run Without Installing
-
-If you do not want a binary yet:
-
-```bash
-go run ./cmd/skills --help
+./bin/skills version
 ```
 
 ## Check Git Availability
 
-Some workflows require Git access. A simple way to confirm the environment is:
+Some workflows require Git access:
 
 ```bash
 git --version
-./bin/skills source sync --help
+skills source sync --help
 ```
 
 For current command coverage, see [CLI Reference](../reference/cli.md).

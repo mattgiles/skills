@@ -101,6 +101,21 @@ func TestSkillListSkipsUnsyncedSource(t *testing.T) {
 	}
 }
 
+func TestVersionCommandShowsBuildInfo(t *testing.T) {
+	env := newTestEnv(t)
+
+	stdout, stderr, err := executeCommand(t, env, "version")
+	if err != nil {
+		t.Fatalf("version error = %v, stderr = %s", err, stderr)
+	}
+
+	for _, want := range []string{"version=dev", "commit=unknown", "date=unknown", "platform="} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
+}
+
 func TestProjectInitCreatesStandardizedWorkspace(t *testing.T) {
 	env := newTestEnv(t)
 	projectDir := t.TempDir()

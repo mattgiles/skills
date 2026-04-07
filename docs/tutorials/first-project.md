@@ -18,13 +18,17 @@ By the end you will:
 
 ## Prerequisites
 
-- Go installed
 - Git installed
-- a clone of this repository
+- `skills` installed
 
-## 1. Build The CLI
+Install the latest public release on macOS:
 
-From the repository root:
+```bash
+curl -fsSL https://raw.githubusercontent.com/mattgiles/skills/main/scripts/install.sh | sh
+export SKILLS_BIN="skills"
+```
+
+If you are working from a local clone as a contributor, building from source is still fine:
 
 ```bash
 mkdir -p ./bin

@@ -20,6 +20,7 @@ Tutorials are for learning by doing.
 How-to guides are for completing a specific task.
 
 - [Install The CLI](how-to/install-the-cli.md)
+- [Release A Version](how-to/release-a-version.md)
 - [Set Up Global Config](how-to/set-up-global-config.md)
 - [Add And Sync A Source](how-to/add-and-sync-a-source.md)
 - [Find Skills In Sources](how-to/find-skills-in-sources.md)

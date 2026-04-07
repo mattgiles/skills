@@ -30,6 +30,7 @@ skills
 │   ├── status
 │   ├── sync [--dry-run]
 │   └── update [source...] [--dry-run] [--sync]
+├── version
 └── project
     ├── init
     ├── status
@@ -162,3 +163,15 @@ Flags:
 ## `skills home update [source...]`
 
 Resolves newer commits for shared home sources and optionally runs `home sync`.
+
+## `skills version`
+
+Prints build metadata for the installed binary.
+
+Current fields:
+
+- `version`
+- `commit`
+- `date`
+- `go`
+- `platform`
