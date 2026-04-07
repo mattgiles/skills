@@ -17,6 +17,7 @@ Global flags:
 
 ```text
 skills
+├── doctor [--global]
 ├── config
 │   └── init
 ├── source
@@ -41,6 +42,25 @@ skills
 ## `skills config init`
 
 Creates the default global config file if it does not already exist.
+
+## `skills doctor`
+
+Runs a read-only diagnostic pass for the current project workspace by default.
+
+Checks:
+
+- `git` availability
+- global config parsing and path resolution
+- project manifest and state parsing
+- source readiness and ref resolution
+- canonical `.agents/skills` link health
+- Claude `.claude/skills` adapter health
+
+Flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--global` | Inspect global config and the shared home workspace instead of the current project |
 
 ## `skills source add <alias> <git-url>`
 
@@ -87,6 +107,12 @@ Creates a project-local standardized workspace:
 - `.agents/manifest.yaml`
 - `.agents/skills/`
 - `.claude/skills/`
+- ignore rules for:
+  - `.agents/state.yaml`
+  - `.agents/skills/`
+  - `.claude/skills/`
+
+If the project lives inside a Git repo, `skills project init` updates the repo-root `.gitignore`. It fails if those managed runtime paths already contain tracked Git content.
 
 ## `skills project status`
 

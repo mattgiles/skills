@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -37,18 +36,21 @@ func newProjectInitCommand() *cobra.Command {
 				return err
 			}
 
-			manifestPath := project.ManifestPath(projectDir)
-			if _, err := os.Stat(manifestPath); err == nil {
-				fmt.Fprintf(cmd.OutOrStdout(), "manifest already exists: %s\n", manifestPath)
-				return nil
-			} else if !errors.Is(err, os.ErrNotExist) {
+			result, err := project.InitProject(projectDir)
+			if err != nil {
 				return err
 			}
 
-			if err := project.InitProject(projectDir); err != nil {
-				return err
+			if result.ManifestCreated {
+				fmt.Fprintf(cmd.OutOrStdout(), "created manifest: %s\n", result.ManifestPath)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "manifest already exists: %s\n", result.ManifestPath)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "created manifest: %s\n", manifestPath)
+			if result.GitignoreUpdated {
+				fmt.Fprintf(cmd.OutOrStdout(), "updated gitignore: %s\n", result.GitignorePath)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "gitignore already covers managed runtime artifacts: %s\n", result.GitignorePath)
+			}
 			return nil
 		},
 	}

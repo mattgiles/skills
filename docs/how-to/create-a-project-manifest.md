@@ -15,6 +15,12 @@ This creates:
 - `.agents/manifest.yaml`
 - `.agents/skills/`
 - `.claude/skills/`
+- `.gitignore` coverage for:
+  - `.agents/state.yaml`
+  - `.agents/skills/`
+  - `.claude/skills/`
+
+`skills` treats `.agents/state.yaml`, `.agents/skills/`, and `.claude/skills/` as generated runtime artifacts. They are not meant to be checked into Git.
 
 ## Add The Required Sections
 

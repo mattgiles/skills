@@ -36,7 +36,7 @@ The installer downloads a prebuilt binary from GitHub Releases, verifies its che
 
 - Project scope:
   - `.agents/manifest.yaml`
-  - `.agents/state.yaml`
+  - `.agents/state.yaml` as generated runtime state
   - `.agents/skills/<skill-name>`
   - `.claude/skills/<skill-name>`
 - Home scope:
@@ -46,3 +46,5 @@ The installer downloads a prebuilt binary from GitHub Releases, verifies its che
   - `~/.claude/skills/<skill-name>`
 
 In both scopes, canonical skill links point to pinned worktree directories, not directly to mutable source clones.
+
+In project scope, `skills project init` also ensures the generated runtime artifacts are gitignored. The tracked project input is `.agents/manifest.yaml`; `.agents/state.yaml`, `.agents/skills/`, and `.claude/skills/` are managed runtime paths.

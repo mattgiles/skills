@@ -2,7 +2,9 @@
 /skills
 
 # Local runtime state if this repo uses the tool itself
-/.skills/
+/.agents/state.yaml
+/.agents/skills/
+/.claude/skills/
 
 # Common local test output
 /coverage.out

@@ -116,6 +116,153 @@ func TestVersionCommandShowsBuildInfo(t *testing.T) {
 	}
 }
 
+func TestDoctorProjectHealthy(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+
+	remote := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init"); err != nil {
+		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
+	}
+	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics"}))
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "sync"); err != nil {
+		t.Fatalf("project sync error = %v, stderr = %s", err, stderr)
+	}
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "doctor", "--verbose")
+	if err != nil {
+		t.Fatalf("doctor error = %v, stderr = %s", err, stderr)
+	}
+
+	for _, want := range []string{
+		"ENVIRONMENT",
+		"CONFIG",
+		"WORKSPACE",
+		"GIT",
+		"SOURCES",
+		"SKILLS",
+		"CLAUDE",
+		"HINTS",
+		"config-missing",
+		"doctor: 0 errors, 0 warnings",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestDoctorProjectMissingManifest(t *testing.T) {
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "doctor", "--verbose")
+	if err == nil {
+		t.Fatalf("expected doctor error, stdout = %s, stderr = %s", stdout, stderr)
+	}
+
+	for _, want := range []string{
+		"manifest-missing",
+		"git-repo-not-found",
+		"project manifest not found",
+		"run skills project init",
+		"not checked because project manifest is missing",
+		"doctor: 1 errors, 1 warnings",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestDoctorGlobalMissingHomeManifestIsWarning(t *testing.T) {
+	env := newTestEnv(t)
+
+	stdout, stderr, err := executeCommand(t, env, "doctor", "--global")
+	if err != nil {
+		t.Fatalf("doctor --global error = %v, stderr = %s", err, stderr)
+	}
+
+	for _, want := range []string{
+		"manifest-missing",
+		"home manifest not found",
+		"run skills home init",
+		"doctor: 0 errors, 1 warnings",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestDoctorConfigParseFailure(t *testing.T) {
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init"); err != nil {
+		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
+	}
+
+	configPath := filepath.Join(env.configHome, "skills", "config.yaml")
+	mustWriteFile(t, configPath, "sources: [\n")
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "doctor", "--verbose")
+	if err == nil {
+		t.Fatalf("expected doctor error, stdout = %s, stderr = %s", stdout, stderr)
+	}
+
+	for _, want := range []string{
+		"config-parse-failed",
+		"global config could not be loaded",
+		"doctor: 1 errors, 2 warnings",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestDoctorWarnsAboutStaleManagedLinks(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	remote := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+		"lint/SKILL.md":      "# lint",
+	})
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init"); err != nil {
+		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
+	}
+
+	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics", "lint"}))
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "sync"); err != nil {
+		t.Fatalf("initial project sync error = %v, stderr = %s", err, stderr)
+	}
+
+	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics"}))
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "doctor")
+	if err != nil {
+		t.Fatalf("doctor error = %v, stderr = %s", err, stderr)
+	}
+
+	for _, want := range []string{
+		"stale-managed-link",
+		"managed skill link is no longer declared",
+		"managed Claude adapter link is no longer declared",
+		"run skills project sync",
+		"doctor: 0 errors, 2 warnings",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
+}
+
 func TestProjectInitCreatesStandardizedWorkspace(t *testing.T) {
 	env := newTestEnv(t)
 	projectDir := t.TempDir()
@@ -132,9 +279,26 @@ func TestProjectInitCreatesStandardizedWorkspace(t *testing.T) {
 		filepath.Join(projectDir, ".agents", "manifest.yaml"),
 		filepath.Join(projectDir, ".agents", "skills"),
 		filepath.Join(projectDir, ".claude", "skills"),
+		filepath.Join(projectDir, ".gitignore"),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected path %q: %v", path, err)
+		}
+	}
+
+	gitignoreData, err := os.ReadFile(filepath.Join(projectDir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("ReadFile(.gitignore) error = %v", err)
+	}
+	for _, want := range []string{
+		"# BEGIN skills managed runtime artifacts",
+		"/.agents/state.yaml",
+		"/.agents/skills/",
+		"/.claude/skills/",
+		"# END skills managed runtime artifacts",
+	} {
+		if !strings.Contains(string(gitignoreData), want) {
+			t.Fatalf(".gitignore missing %q:\n%s", want, string(gitignoreData))
 		}
 	}
 
@@ -144,6 +308,160 @@ func TestProjectInitCreatesStandardizedWorkspace(t *testing.T) {
 	} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("did not expect %q to be created, got err=%v", path, err)
+		}
+	}
+}
+
+func TestProjectInitUsesRepoRootGitignoreForNestedProject(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	repoRoot := t.TempDir()
+	initGitRepo(t, repoRoot)
+
+	projectDir := filepath.Join(repoRoot, "apps", "nested")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", projectDir, err)
+	}
+	mustWriteFile(t, filepath.Join(repoRoot, ".gitignore"), "# existing\n")
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init")
+	if err != nil {
+		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
+	}
+	resolvedRepoRoot := resolvedPath(t, repoRoot)
+	if !strings.Contains(stdout, "updated gitignore: "+filepath.Join(resolvedRepoRoot, ".gitignore")) {
+		t.Fatalf("stdout = %q", stdout)
+	}
+
+	data, err := os.ReadFile(filepath.Join(repoRoot, ".gitignore"))
+	if err != nil {
+		t.Fatalf("ReadFile(repo .gitignore) error = %v", err)
+	}
+	for _, want := range []string{
+		"# existing",
+		"/apps/nested/.agents/state.yaml",
+		"/apps/nested/.agents/skills/",
+		"/apps/nested/.claude/skills/",
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("repo .gitignore missing %q:\n%s", want, string(data))
+		}
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, ".gitignore")); !os.IsNotExist(err) {
+		t.Fatalf("did not expect nested project .gitignore, got err=%v", err)
+	}
+}
+
+func TestProjectInitIsIdempotentForGitignoreRules(t *testing.T) {
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init"); err != nil {
+		t.Fatalf("first project init error = %v, stderr = %s", err, stderr)
+	}
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init")
+	if err != nil {
+		t.Fatalf("second project init error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "manifest already exists:") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	if !strings.Contains(stdout, "gitignore already covers managed runtime artifacts:") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+
+	data, err := os.ReadFile(filepath.Join(projectDir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("ReadFile(.gitignore) error = %v", err)
+	}
+	if strings.Count(string(data), "# BEGIN skills managed runtime artifacts") != 1 {
+		t.Fatalf(".gitignore duplicated managed block:\n%s", string(data))
+	}
+}
+
+func TestProjectInitFailsWhenManagedPathsAreTracked(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
+
+	mustWriteFile(t, filepath.Join(projectDir, ".agents", "skills", "legacy", "README.md"), "tracked\n")
+	runGit(t, projectDir, "add", ".agents/skills/legacy/README.md")
+	runGit(t, projectDir, "commit", "-m", "tracked managed path")
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init")
+	if err == nil {
+		t.Fatalf("expected project init error, stdout = %s, stderr = %s", stdout, stderr)
+	}
+	for _, want := range []string{
+		"managed runtime paths already contain tracked Git content",
+		".agents/skills/legacy/README.md",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, ".agents", "manifest.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("did not expect manifest to be created, got err=%v", err)
+	}
+}
+
+func TestDoctorWarnsWhenManagedIgnoreRulesAreMissing(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+
+	remote := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init"); err != nil {
+		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
+	}
+	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics"}))
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "sync"); err != nil {
+		t.Fatalf("project sync error = %v, stderr = %s", err, stderr)
+	}
+	mustWriteFile(t, filepath.Join(projectDir, ".gitignore"), "# no managed rules\n")
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "doctor")
+	if err != nil {
+		t.Fatalf("doctor error = %v, stderr = %s", err, stderr)
+	}
+	for _, want := range []string{
+		"ignore-rules-missing",
+		"run skills project init",
+		"doctor: 0 errors, 1 warnings",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestDoctorErrorsWhenManagedPathsAreTracked(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
+
+	mustWriteFile(t, filepath.Join(projectDir, ".agents", "manifest.yaml"), "sources: {}\nskills: []\n")
+	mustWriteFile(t, filepath.Join(projectDir, ".agents", "skills", "legacy", "README.md"), "tracked\n")
+	mustWriteFile(t, filepath.Join(projectDir, ".gitignore"), "# not enough\n")
+	runGit(t, projectDir, "add", ".agents/manifest.yaml", ".agents/skills/legacy/README.md")
+	runGit(t, projectDir, "commit", "-m", "tracked managed path")
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "doctor")
+	if err == nil {
+		t.Fatalf("expected doctor error, stdout = %s, stderr = %s", stdout, stderr)
+	}
+	for _, want := range []string{
+		"tracked-managed-path",
+		".agents/skills/legacy/README.md",
+		"doctor: 1 errors, 3 warnings",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout)
 		}
 	}
 }
@@ -488,9 +806,7 @@ func initRemoteRepo(t *testing.T, files map[string]string) string {
 	t.Helper()
 
 	repo := t.TempDir()
-	runGit(t, repo, "init", "-b", "main")
-	runGit(t, repo, "config", "user.name", "Codex Test")
-	runGit(t, repo, "config", "user.email", "codex@example.com")
+	initGitRepo(t, repo)
 
 	for path, contents := range files {
 		mustWriteFile(t, filepath.Join(repo, path), contents)
@@ -499,6 +815,14 @@ func initRemoteRepo(t *testing.T, files map[string]string) string {
 	runGit(t, repo, "add", ".")
 	runGit(t, repo, "commit", "-m", "initial")
 	return repo
+}
+
+func initGitRepo(t *testing.T, repo string) {
+	t.Helper()
+
+	runGit(t, repo, "init", "-b", "main")
+	runGit(t, repo, "config", "user.name", "Codex Test")
+	runGit(t, repo, "config", "user.email", "codex@example.com")
 }
 
 func runGit(t *testing.T, dir string, args ...string) {

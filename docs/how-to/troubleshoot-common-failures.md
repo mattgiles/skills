@@ -2,6 +2,44 @@
 
 This page covers the most common current failure modes.
 
+Start with:
+
+```bash
+skills doctor
+```
+
+Or for shared home installs:
+
+```bash
+skills doctor --global
+```
+
+## `ignore-rules-missing`
+
+Cause:
+
+- the effective `.gitignore` does not ignore one or more managed runtime paths:
+  - `.agents/state.yaml`
+  - `.agents/skills/`
+  - `.claude/skills/`
+
+Fix:
+
+```bash
+skills project init
+```
+
+## `tracked-managed-path`
+
+Cause:
+
+- a file inside a `skills`-managed runtime path is already tracked by Git
+
+Fix:
+
+- move or remove the tracked content from the managed path
+- re-run `skills project init`
+
 ## `manifest not found`
 
 Cause:
