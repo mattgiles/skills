@@ -17,7 +17,10 @@ Global flags:
 
 ```text
 skills
-├── init [--project|--global] [--cache local|global]
+├── init [--global] [--cache local|global]
+├── status [--global]
+├── sync [--global] [--dry-run]
+├── update [source...] [--global] [--dry-run] [--sync]
 ├── doctor [--global]
 ├── self
 │   └── update [--version <tag>]
@@ -29,17 +32,7 @@ skills
 │   └── sync [alias...]
 ├── skill
 │   └── list [--source <alias>]
-├── home
-│   ├── init
-│   ├── status
-│   ├── sync [--dry-run]
-│   └── update [source...] [--dry-run] [--sync]
-├── version
-└── project
-    ├── init [--cache local|global]
-    ├── status
-    ├── sync [--dry-run]
-    └── update [source...] [--dry-run] [--sync]
+└── version
 ```
 
 ## `skills config init`
@@ -79,23 +72,21 @@ Flags:
 
 ## `skills init`
 
-Initializes either repo-local project state or shared home/global state.
+Initializes repo-local state by default, or shared home/global state with `--global`.
 
 Flags:
 
 | Flag | Meaning |
 | --- | --- |
-| `--project` | Initialize repo-local project state explicitly |
 | `--global` | Initialize shared home/global state explicitly |
 | `--cache <local\|global>` | Choose the cache backend for project mode |
 
 Behavior:
 
-- inside a Git repo, `skills init` routes to repo-local initialization automatically when repo-local `skills` artifacts already exist
-- inside a Git repo with no existing `skills` artifacts, `skills init` prompts on an interactive TTY
+- inside a Git repo, `skills init` initializes or repairs repo-local state
 - project mode records the chosen cache backend in untracked `.agents/local.yaml`
-- in non-interactive contexts, pass `--project --cache=<local|global>` or `--global`
-- outside a Git repo, `skills init` requires explicit scope
+- in non-interactive repo initialization, pass `--cache=<local|global>` the first time
+- outside a Git repo, `skills init` requires `--global`
 
 ## `skills source add <alias> <git-url>`
 
@@ -135,7 +126,64 @@ Flags:
 | --- | --- |
 | `--source <alias>` | Only list skills from the named source |
 
-## `skills project init`
+## `skills status`
+
+Shows installed skill status for the current repo by default.
+
+Flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--global` | Show status for shared home/global installs instead of the current repo |
+
+Repo mode shows:
+
+- source resolution state
+- canonical skill link state in `.agents/skills`
+- Claude adapter link state in `.claude/skills`
+- stale managed links for both sections
+
+Global mode shows the same sections for `~/.agents/skills` and `~/.claude/skills`.
+
+## `skills sync`
+
+Enforces the declared skills state for the current repo by default.
+
+Flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--global` | Sync shared home/global installs instead of the current repo |
+| `--dry-run` | Preview sync actions without changing state or links |
+
+Repo mode syncs:
+
+- canonical repo links in `.agents/skills`
+- Claude adapter links in `.claude/skills`
+- using either:
+  - repo-local clones and worktrees under `.agents/cache/` when `.agents/local.yaml` selects `local`
+  - global clone and worktree roots from config when `.agents/local.yaml` selects `global`
+
+Global mode syncs:
+
+- `~/.agents/skills`
+- `~/.claude/skills`
+
+## `skills update [source...]`
+
+Resolves newer commits for the current repo by default and optionally runs `sync`.
+
+Flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--global` | Update shared home/global installs instead of the current repo |
+| `--dry-run` | Preview update actions without changing state or links |
+| `--sync` | Run `sync` after updating source state |
+
+## Repo-Local Initialization Details
+
+`skills init` in a repo creates a project-local standardized workspace:
 
 Creates a project-local standardized workspace:
 
@@ -157,84 +205,11 @@ Flags:
 | --- | --- |
 | `--cache <local\|global>` | Choose the cache backend for this repo user |
 
-If the project lives inside a Git repo, `skills project init` updates the repo-root `.gitignore`. It fails if those managed runtime paths already contain tracked Git content.
+If the project lives inside a Git repo, `skills init` updates the repo-root `.gitignore`. It fails if those managed runtime paths already contain tracked Git content.
 
-## `skills project status`
+## Shared Home Initialization Details
 
-Shows:
-
-- source resolution state
-- canonical skill link state in `.agents/skills`
-- Claude adapter link state in `.claude/skills`
-- stale managed links for both sections
-
-Sections:
-
-- `SOURCES`
-- `SKILLS`
-- `CLAUDE`
-- `STALE_SKILLS` when present
-- `STALE_CLAUDE` when present
-
-## `skills project sync`
-
-Syncs the declared project skills into:
-
-- canonical project links in `.agents/skills`
-- Claude adapter links in `.claude/skills`
-- using either:
-  - repo-local clones and worktrees under `.agents/cache/` when `.agents/local.yaml` selects `local`
-  - global clone and worktree roots from config when `.agents/local.yaml` selects `global`
-
-Flags:
-
-| Flag | Meaning |
-| --- | --- |
-| `--dry-run` | Preview sync actions without changing state or links |
-
-Sections:
-
-- `SOURCES`
-- `SKILLS`
-- `CLAUDE`
-- `PRUNED_SKILLS` when present
-- `PRUNED_CLAUDE` when present
-
-## `skills project update [source...]`
-
-Resolves newer commits for project sources and optionally runs `project sync`.
-
-Flags:
-
-| Flag | Meaning |
-| --- | --- |
-| `--dry-run` | Preview update actions without changing state or links |
-| `--sync` | Run `project sync` after updating source state |
-
-## `skills home init`
-
-Creates the shared home manifest at `~/.agents/manifest.yaml` by default and ensures the shared canonical directories exist.
-
-## `skills home status`
-
-Shows source state, canonical shared-skill state in `~/.agents/skills`, and Claude adapter state in `~/.claude/skills`.
-
-## `skills home sync`
-
-Syncs the shared home manifest into:
-
-- `~/.agents/skills`
-- `~/.claude/skills`
-
-Flags:
-
-| Flag | Meaning |
-| --- | --- |
-| `--dry-run` | Preview sync actions without changing state or links |
-
-## `skills home update [source...]`
-
-Resolves newer commits for shared home sources and optionally runs `home sync`.
+`skills init --global` creates the shared home manifest at `~/.agents/manifest.yaml` by default and ensures the shared canonical directories exist.
 
 ## `skills version`
 

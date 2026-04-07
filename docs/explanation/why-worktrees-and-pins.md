@@ -34,7 +34,7 @@ This avoids two common problems:
 
 The update flow is split on purpose:
 
-- `project update` moves stored source state forward
-- `project sync` moves installed symlinks forward
+- `skills update` moves stored source state forward
+- `skills sync` moves installed symlinks forward
 
 That split makes change review and dry-run behavior clearer.

@@ -1,139 +1,13 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"os"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
 	"github.com/mattgiles/skills/internal/project"
-	"github.com/mattgiles/skills/internal/source"
 )
-
-func newProjectCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "project",
-		Short: "Manage project-local standardized agent skills",
-	}
-
-	cmd.AddCommand(newProjectInitCommand())
-	cmd.AddCommand(newProjectStatusCommand())
-	cmd.AddCommand(newProjectSyncCommand())
-	cmd.AddCommand(newProjectUpdateCommand())
-
-	return cmd
-}
-
-func newProjectInitCommand() *cobra.Command {
-	var cacheMode string
-
-	cmd := &cobra.Command{
-		Use:   "init",
-		Short: "Create a project standardized workspace",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			projectDir, err := os.Getwd()
-			if err != nil {
-				return err
-			}
-
-			return runProjectInit(cmd, projectDir, cacheMode)
-		},
-	}
-
-	cmd.Flags().StringVar(&cacheMode, "cache", "", "Project cache backend: local or global")
-	return cmd
-}
-
-func newProjectStatusCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "status",
-		Short: "Show source, canonical skill, and Claude adapter status for the current project",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			projectDir, err := os.Getwd()
-			if err != nil {
-				return err
-			}
-
-			report, err := project.Status(context.Background(), projectDir)
-			if err != nil {
-				return err
-			}
-
-			renderProjectStatus(cmd, report, verboseEnabled(cmd))
-			return nil
-		},
-	}
-}
-
-func newProjectSyncCommand() *cobra.Command {
-	var dryRun bool
-
-	cmd := &cobra.Command{
-		Use:   "sync",
-		Short: "Sync declared project skills into canonical and Claude adapter directories",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := source.EnsureGitAvailable(); err != nil {
-				return err
-			}
-
-			projectDir, err := os.Getwd()
-			if err != nil {
-				return err
-			}
-
-			result, err := project.Sync(context.Background(), projectDir, project.SyncOptions{
-				DryRun: dryRun,
-			})
-			if err != nil {
-				return err
-			}
-
-			renderProjectSync(cmd, result, verboseEnabled(cmd))
-			return nil
-		},
-	}
-
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview sync actions without changing state or links")
-	return cmd
-}
-
-func newProjectUpdateCommand() *cobra.Command {
-	var dryRun bool
-	var syncAfter bool
-
-	cmd := &cobra.Command{
-		Use:   "update [source...]",
-		Short: "Resolve newer commits for project sources",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := source.EnsureGitAvailable(); err != nil {
-				return err
-			}
-
-			projectDir, err := os.Getwd()
-			if err != nil {
-				return err
-			}
-
-			result, err := project.Update(context.Background(), projectDir, project.UpdateOptions{
-				SelectedSources: args,
-				Sync:            syncAfter,
-				DryRun:          dryRun,
-			})
-			if err != nil {
-				return err
-			}
-
-			renderProjectUpdate(cmd, result, verboseEnabled(cmd))
-			return nil
-		},
-	}
-
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview update actions without changing state or links")
-	cmd.Flags().BoolVar(&syncAfter, "sync", false, "Run project sync after updating source state")
-	return cmd
-}
 
 func renderProjectStatus(cmd *cobra.Command, report project.StatusReport, verbose bool) {
 	renderWorkspaceStatus(cmd, report, verbose, "no project sources declared", "no project skills declared")

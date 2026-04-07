@@ -148,6 +148,7 @@ func newSnapshotEnv(t *testing.T) snapshotEnv {
 			t.Fatalf("MkdirAll(%q): %v", path, err)
 		}
 	}
+	initGitRepo(t, env.projectDir)
 
 	return env
 }

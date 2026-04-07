@@ -23,7 +23,7 @@ cd /tmp/skills-tutorial/project
 ## 2. Preview The Update
 
 ```bash
-$SKILLS_BIN project update --dry-run
+$SKILLS_BIN update --dry-run
 ```
 
 Expected behavior:
@@ -35,7 +35,7 @@ Expected behavior:
 ## 3. Record The New Commit
 
 ```bash
-$SKILLS_BIN project update
+$SKILLS_BIN update
 ```
 
 The stored project state now points at the newer commit, but the canonical `.agents/skills` symlink may still point at the old worktree.
@@ -43,10 +43,10 @@ The stored project state now points at the newer commit, but the canonical `.age
 ## 4. Confirm The Canonical Link Is Stale
 
 ```bash
-$SKILLS_BIN project status
+$SKILLS_BIN status
 ```
 
-Expected behavior after `project update` and before `project sync`:
+Expected behavior after `skills update` and before `skills sync`:
 
 - source status `up-to-date`
 - canonical skill status `stale`
@@ -57,8 +57,8 @@ That is expected because the Claude adapter points to the canonical `.agents/ski
 ## 5. Preview And Apply The Canonical Link Update
 
 ```bash
-$SKILLS_BIN project sync --dry-run
-$SKILLS_BIN project sync
+$SKILLS_BIN sync --dry-run
+$SKILLS_BIN sync
 ```
 
 The canonical skill row should move from `would-update` to `updated`.

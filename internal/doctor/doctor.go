@@ -336,7 +336,7 @@ func checkProjectWorkspace(ctx context.Context, report *Report, cwd string, gitA
 
 	addProjectOwnershipFindings(report, cwd)
 
-	manifest, ok, skipReason := inspectWorkspaceInputs(report, manifestPath, statePath, "project", "skills project init")
+	manifest, ok, skipReason := inspectWorkspaceInputs(report, manifestPath, statePath, "project", "skills init")
 	if !ok {
 		addSkippedSections(report, skipReason)
 		return
@@ -410,7 +410,7 @@ func inspectProjectCacheConfig(report *Report, cwd string, localConfigPath strin
 			Code:     "local-config-missing",
 			Subject:  localConfigPath,
 			Message:  "project cache mode is not explicitly configured; implicit local mode is in effect",
-			Hint:     "run skills init --project --cache=local or skills init --project --cache=global",
+			Hint:     "run skills init --cache=local or skills init --cache=global",
 			Path:     localConfigPath,
 		})
 	}
@@ -613,7 +613,7 @@ func addProjectOwnershipFindings(report *Report, projectDir string) {
 			Code:     "ignore-rules-missing",
 			Subject:  ownership.GitignorePath,
 			Message:  "missing ignore rules for managed runtime artifacts",
-			Hint:     "run skills project init",
+			Hint:     "run skills init",
 			Path:     ownership.GitignorePath,
 		})
 	}
@@ -625,7 +625,7 @@ func addProjectOwnershipFindings(report *Report, projectDir string) {
 			Code:     "tracked-managed-path",
 			Subject:  trackedPath,
 			Message:  "managed runtime artifacts should not be tracked by Git",
-			Hint:     "move or remove the tracked content from managed paths, then run skills project init",
+			Hint:     "move or remove the tracked content from managed paths, then run skills init",
 			Path:     trackedPath,
 		})
 	}
@@ -671,7 +671,7 @@ func checkGlobalWorkspace(ctx context.Context, report *Report, cfg config.Config
 	}
 
 	report.Target = configPaths.sharedSkills
-	manifest, ok, skipReason := inspectWorkspaceInputs(report, manifestPath, statePath, "home", "skills home init")
+	manifest, ok, skipReason := inspectWorkspaceInputs(report, manifestPath, statePath, "home", "skills init --global")
 	if !ok {
 		if hasFinding(report.Findings, SectionWorkspace, "manifest-missing") {
 			report.Findings[len(report.Findings)-1].Severity = SeverityWarn
@@ -854,7 +854,7 @@ func addStatusFindings(report *Report, status project.StatusReport, scope Scope)
 				Code:     src.Status,
 				Subject:  src.Alias,
 				Message:  firstNonEmpty(src.Message, "canonical source repo is not cloned"),
-				Hint:     "run skills source sync",
+				Hint:     syncHint(scope),
 				Path:     src.RepoPath,
 				Ref:      src.Ref,
 			})
@@ -865,7 +865,7 @@ func addStatusFindings(report *Report, status project.StatusReport, scope Scope)
 				Code:     src.Status,
 				Subject:  src.Alias,
 				Message:  firstNonEmpty(src.Message, "source path exists but is not a valid git repository"),
-				Hint:     "fix or remove the source path and run skills source sync",
+				Hint:     "fix or remove the source path and re-run " + syncCommand(scope),
 				Path:     src.RepoPath,
 				Ref:      src.Ref,
 			})
@@ -876,7 +876,7 @@ func addStatusFindings(report *Report, status project.StatusReport, scope Scope)
 				Code:     src.Status,
 				Subject:  src.Alias,
 				Message:  firstNonEmpty(src.Message, "source ref could not be resolved"),
-				Hint:     "confirm the ref and run skills source sync",
+				Hint:     "confirm the ref and re-run " + syncCommand(scope),
 				Path:     src.RepoPath,
 				Ref:      src.Ref,
 			})
@@ -1030,9 +1030,9 @@ func addLinkFinding(report *Report, section string, link project.LinkReport, sco
 
 func syncCommand(scope Scope) string {
 	if scope == ScopeGlobal {
-		return "skills home sync"
+		return "skills sync --global"
 	}
-	return "skills project sync"
+	return "skills sync"
 }
 
 func syncHint(scope Scope) string {
@@ -1041,9 +1041,9 @@ func syncHint(scope Scope) string {
 
 func updateHint(scope Scope) string {
 	if scope == ScopeGlobal {
-		return "run skills home update --sync"
+		return "run skills update --global --sync"
 	}
-	return "run skills project update --sync"
+	return "run skills update --sync"
 }
 
 func firstNonEmpty(values ...string) string {

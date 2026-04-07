@@ -14,10 +14,17 @@ skills:
 ```
 
 ```command
-skills project sync --verbose
+skills sync --verbose
 ```
 
 ```stdout
+scope: repo
+root: <project>
+installs: <project>/.agents/skills
+cache: local
+worktrees: <project>/.agents/cache/worktrees
+repos: <project>/.agents/cache/repos
+
 SOURCES
 SOURCE  STATUS  REF  COMMIT  STORED  REPO_PATH  WORKTREE_PATH  MESSAGE
 dagster  resolved  master  <sha>  -  <project>/.agents/cache/repos/dagster  <project>/.agents/cache/worktrees/project-<sha>/dagster/<sha>  -
@@ -35,10 +42,17 @@ dagster  dagster-expert  created  <project>/.claude/skills/dagster-expert  <proj
 ```
 
 ```command
-skills project status --verbose
+skills status --verbose
 ```
 
 ```stdout
+scope: repo
+root: <project>
+installs: <project>/.agents/skills
+cache: local
+worktrees: <project>/.agents/cache/worktrees
+repos: <project>/.agents/cache/repos
+
 SOURCES
 SOURCE  STATUS  REF  COMMIT  STORED  REPO_PATH  WORKTREE_PATH  MESSAGE
 dagster  up-to-date  master  <sha>  <sha>  <project>/.agents/cache/repos/dagster  <project>/.agents/cache/worktrees/project-<sha>/dagster/<sha>  -
@@ -69,10 +83,17 @@ skills:
 ```
 
 ```command
-skills project sync --verbose
+skills sync --verbose
 ```
 
 ```stdout
+scope: repo
+root: <project>
+installs: <project>/.agents/skills
+cache: local
+worktrees: <project>/.agents/cache/worktrees
+repos: <project>/.agents/cache/repos
+
 SOURCES
 SOURCE  STATUS  REF  COMMIT  STORED  REPO_PATH  WORKTREE_PATH  MESSAGE
 vercel  resolved  main  <sha>  -  <project>/.agents/cache/repos/vercel  <project>/.agents/cache/worktrees/project-<sha>/vercel/<sha>  -

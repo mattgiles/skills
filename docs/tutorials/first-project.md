@@ -63,7 +63,7 @@ cd /tmp/skills-tutorial
 ```bash
 mkdir -p project
 cd project
-$SKILLS_BIN init --project --cache=local
+$SKILLS_BIN init --cache=local
 ```
 
 Edit `.agents/manifest.yaml`:
@@ -81,7 +81,7 @@ skills:
 ## 5. Sync The Project
 
 ```bash
-$SKILLS_BIN project sync --verbose
+$SKILLS_BIN sync --verbose
 ```
 
 On the first run you should see:
@@ -93,7 +93,7 @@ On the first run you should see:
 ## 6. Inspect The Result
 
 ```bash
-$SKILLS_BIN project status --verbose
+$SKILLS_BIN status --verbose
 ls -l .agents/cache
 ls -l .agents/skills
 ls -l .claude/skills

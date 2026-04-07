@@ -23,10 +23,17 @@ skills:
 ```
 
 ```command
-skills project sync --verbose
+skills sync --verbose
 ```
 
 ```stdout
+scope: repo
+root: <project>
+installs: <project>/.agents/skills
+cache: local
+worktrees: <project>/.agents/cache/worktrees
+repos: <project>/.agents/cache/repos
+
 SOURCES
 SOURCE  STATUS  REF  COMMIT  STORED  REPO_PATH  WORKTREE_PATH  MESSAGE
 repo-one  resolved  main  <sha>  -  <project>/.agents/cache/repos/repo-one  <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha>  -
@@ -44,10 +51,17 @@ repo-one  analytics  created  <project>/.claude/skills/analytics  <project>/.age
 ```
 
 ```command
-skills project status --verbose
+skills status --verbose
 ```
 
 ```stdout
+scope: repo
+root: <project>
+installs: <project>/.agents/skills
+cache: local
+worktrees: <project>/.agents/cache/worktrees
+repos: <project>/.agents/cache/repos
+
 SOURCES
 SOURCE  STATUS  REF  COMMIT  STORED  REPO_PATH  WORKTREE_PATH  MESSAGE
 repo-one  up-to-date  main  <sha>  <sha>  <project>/.agents/cache/repos/repo-one  <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha>  -

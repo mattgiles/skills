@@ -1,6 +1,6 @@
 # Sync Project Skills
 
-Use `skills project sync` to ensure sources exist, resolve the correct commit, materialize worktrees in the active project cache backend, and link the selected skills into the project’s canonical `.agents/skills` directory. The same sync also creates Claude adapter links in `.claude/skills`.
+Use `skills sync` to ensure sources exist, resolve the correct commit, materialize worktrees in the active project cache backend, and link the selected skills into the project’s canonical `.agents/skills` directory. The same sync also creates Claude adapter links in `.claude/skills`.
 
 Project cache backends:
 
@@ -12,7 +12,7 @@ Project cache backends:
 From the project directory:
 
 ```bash
-skills project sync
+skills sync
 ```
 
 Typical first-run results:
@@ -30,7 +30,7 @@ Typical later-run results:
 ## Preview Without Changing State
 
 ```bash
-skills project sync --dry-run
+skills sync --dry-run
 ```
 
 Dry-run behavior:

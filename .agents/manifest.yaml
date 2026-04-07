@@ -1,0 +1,8 @@
+sources:
+  golang:
+      url: https://github.com/samber/cc-skills-golang
+      ref: main
+
+skills:
+  - source: golang
+    name: golang-cli

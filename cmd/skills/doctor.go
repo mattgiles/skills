@@ -28,14 +28,22 @@ func newDoctorCommand() *cobra.Command {
 			}
 
 			scope := doctor.ScopeProject
+			targetDir := cwd
 			if global {
 				scope = doctor.ScopeGlobal
+			} else {
+				targetDir, err = resolveRepoRoot(cwd, false)
+				if err != nil {
+					return fmt.Errorf("outside a Git repo; use skills doctor --global")
+				}
 			}
 
-			report, err := doctor.Check(context.Background(), cwd, scope)
+			report, err := doctor.Check(context.Background(), targetDir, scope)
 			if err != nil {
 				return err
 			}
+
+			renderDoctorSummary(cmd, targetDir, global)
 
 			renderDoctor(cmd, report, verboseEnabled(cmd))
 			if report.HasErrors() {
@@ -47,6 +55,28 @@ func newDoctorCommand() *cobra.Command {
 
 	cmd.Flags().BoolVar(&global, "global", false, "Inspect global config and the shared home workspace")
 	return cmd
+}
+
+func renderDoctorSummary(cmd *cobra.Command, targetDir string, global bool) {
+	var (
+		summary workspaceSummary
+		err     error
+	)
+
+	if global {
+		cfg, loadErr := loadConfig()
+		if loadErr != nil {
+			return
+		}
+		summary, err = globalWorkspaceSummary(cfg)
+	} else {
+		summary, err = repoWorkspaceSummary(targetDir)
+	}
+	if err != nil {
+		return
+	}
+
+	renderWorkspaceSummary(cmd, summary, verboseEnabled(cmd))
 }
 
 func renderDoctor(cmd *cobra.Command, report doctor.Report, verbose bool) {

@@ -28,7 +28,7 @@ Cause:
 Fix:
 
 ```bash
-skills project init --cache=local
+skills init --cache=local
 ```
 
 ## `tracked-managed-path`
@@ -40,7 +40,7 @@ Cause:
 Fix:
 
 - move or remove the tracked content from the managed path
-- re-run `skills project init`
+- re-run `skills init`
 
 ## `local-config-missing`
 
@@ -52,13 +52,13 @@ Cause:
 Fix:
 
 ```bash
-skills init --project --cache=local
+skills init --cache=local
 ```
 
 or:
 
 ```bash
-skills init --project --cache=global
+skills init --cache=global
 ```
 
 ## `manifest not found`
@@ -70,13 +70,13 @@ Cause:
 Fix:
 
 ```bash
-skills project init --cache=local
+skills init --cache=local
 ```
 
 or:
 
 ```bash
-skills home init
+skills init --global
 ```
 
 ## `missing-source`
@@ -149,11 +149,11 @@ Cause:
 Fix:
 
 ```bash
-skills project sync
+skills sync
 ```
 
 or:
 
 ```bash
-skills home sync
+skills sync --global
 ```

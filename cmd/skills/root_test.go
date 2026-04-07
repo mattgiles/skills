@@ -156,12 +156,13 @@ func TestDoctorProjectHealthy(t *testing.T) {
 	remote := initRemoteRepo(t, map[string]string{
 		"analytics/SKILL.md": "# analytics",
 	})
-	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=local"); err != nil {
+	initGitRepo(t, projectDir)
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
 		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
 	}
 	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics"}))
 
-	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "sync"); err != nil {
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "sync"); err != nil {
 		t.Fatalf("project sync error = %v, stderr = %s", err, stderr)
 	}
 
@@ -192,6 +193,7 @@ func TestDoctorProjectHealthy(t *testing.T) {
 func TestDoctorProjectMissingManifest(t *testing.T) {
 	env := newTestEnv(t)
 	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
 
 	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "doctor", "--verbose")
 	if err == nil {
@@ -200,9 +202,9 @@ func TestDoctorProjectMissingManifest(t *testing.T) {
 
 	for _, want := range []string{
 		"manifest-missing",
-		"git-repo-not-found",
+		"git-repo-root",
 		"project manifest not found",
-		"run skills project init",
+		"run skills init",
 		"not checked because project manifest is missing",
 		"doctor: 1 errors, 2 warnings",
 	} {
@@ -223,7 +225,7 @@ func TestDoctorGlobalMissingHomeManifestIsWarning(t *testing.T) {
 	for _, want := range []string{
 		"manifest-missing",
 		"home manifest not found",
-		"run skills home init",
+		"run skills init --global",
 		"doctor: 0 errors, 1 warnings",
 	} {
 		if !strings.Contains(stdout, want) {
@@ -236,7 +238,8 @@ func TestDoctorConfigParseFailure(t *testing.T) {
 	env := newTestEnv(t)
 	projectDir := t.TempDir()
 
-	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=local"); err != nil {
+	initGitRepo(t, projectDir)
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
 		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
 	}
 
@@ -258,6 +261,52 @@ func TestDoctorConfigParseFailure(t *testing.T) {
 	}
 }
 
+func TestDoctorProjectMalformedLocalConfigStillRendersReport(t *testing.T) {
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+
+	initGitRepo(t, projectDir)
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
+		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
+	}
+	mustWriteFile(t, filepath.Join(projectDir, ".agents", "local.yaml"), "cache: [\n")
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "doctor", "--verbose")
+	if err == nil {
+		t.Fatalf("expected doctor error, stdout = %s, stderr = %s", stdout, stderr)
+	}
+
+	for _, want := range []string{
+		"local-config-parse-failed",
+		"doctor: 1 errors, 0 warnings",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestDoctorGlobalMalformedConfigStillRendersReport(t *testing.T) {
+	env := newTestEnv(t)
+
+	configPath := filepath.Join(env.configHome, "skills", "config.yaml")
+	mustWriteFile(t, configPath, "sources: [\n")
+
+	stdout, stderr, err := executeCommand(t, env, "doctor", "--global")
+	if err == nil {
+		t.Fatalf("expected doctor error, stdout = %s, stderr = %s", stdout, stderr)
+	}
+
+	for _, want := range []string{
+		"config-parse-failed",
+		"doctor: 1 errors, 0 warnings",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
+}
+
 func TestDoctorWarnsAboutStaleManagedLinks(t *testing.T) {
 	requireGit(t)
 	env := newTestEnv(t)
@@ -266,12 +315,13 @@ func TestDoctorWarnsAboutStaleManagedLinks(t *testing.T) {
 		"analytics/SKILL.md": "# analytics",
 		"lint/SKILL.md":      "# lint",
 	})
-	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=local"); err != nil {
+	initGitRepo(t, projectDir)
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
 		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
 	}
 
 	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics", "lint"}))
-	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "sync"); err != nil {
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "sync"); err != nil {
 		t.Fatalf("initial project sync error = %v, stderr = %s", err, stderr)
 	}
 
@@ -286,7 +336,7 @@ func TestDoctorWarnsAboutStaleManagedLinks(t *testing.T) {
 		"stale-managed-link",
 		"managed skill link is no longer declared",
 		"managed Claude adapter link is no longer declared",
-		"run skills project sync",
+		"run skills sync",
 		"doctor: 0 errors, 2 warnings",
 	} {
 		if !strings.Contains(stdout, want) {
@@ -298,8 +348,9 @@ func TestDoctorWarnsAboutStaleManagedLinks(t *testing.T) {
 func TestProjectInitCreatesStandardizedWorkspace(t *testing.T) {
 	env := newTestEnv(t)
 	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
 
-	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=local")
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local")
 	if err != nil {
 		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
 	}
@@ -362,12 +413,15 @@ func TestProjectInitUsesRepoRootGitignoreForNestedProject(t *testing.T) {
 	}
 	mustWriteFile(t, filepath.Join(repoRoot, ".gitignore"), "# existing\n")
 
-	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=local")
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local")
 	if err != nil {
 		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
 	}
 	resolvedRepoRoot := resolvedPath(t, repoRoot)
 	if !strings.Contains(stdout, "updated gitignore: "+filepath.Join(resolvedRepoRoot, ".gitignore")) {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	if !strings.Contains(stdout, "created manifest: "+filepath.Join(resolvedRepoRoot, ".agents", "manifest.yaml")) {
 		t.Fatalf("stdout = %q", stdout)
 	}
 
@@ -377,18 +431,21 @@ func TestProjectInitUsesRepoRootGitignoreForNestedProject(t *testing.T) {
 	}
 	for _, want := range []string{
 		"# existing",
-		"/apps/nested/.agents/state.yaml",
-		"/apps/nested/.agents/local.yaml",
-		"/apps/nested/.agents/skills/",
-		"/apps/nested/.agents/cache/",
-		"/apps/nested/.claude/skills/",
+		"/.agents/state.yaml",
+		"/.agents/local.yaml",
+		"/.agents/skills/",
+		"/.agents/cache/",
+		"/.claude/skills/",
 	} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("repo .gitignore missing %q:\n%s", want, string(data))
 		}
 	}
-	if _, err := os.Stat(filepath.Join(projectDir, ".gitignore")); !os.IsNotExist(err) {
-		t.Fatalf("did not expect nested project .gitignore, got err=%v", err)
+	if _, err := os.Stat(filepath.Join(projectDir, ".agents", "manifest.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("did not expect nested project workspace, got err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, ".agents", "manifest.yaml")); err != nil {
+		t.Fatalf("expected repo-root manifest: %v", err)
 	}
 }
 
@@ -396,10 +453,11 @@ func TestProjectInitIsIdempotentForGitignoreRules(t *testing.T) {
 	env := newTestEnv(t)
 	projectDir := t.TempDir()
 
-	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=local"); err != nil {
+	initGitRepo(t, projectDir)
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
 		t.Fatalf("first project init error = %v, stderr = %s", err, stderr)
 	}
-	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=local")
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local")
 	if err != nil {
 		t.Fatalf("second project init error = %v, stderr = %s", err, stderr)
 	}
@@ -432,7 +490,7 @@ func TestProjectInitFailsWhenManagedPathsAreTracked(t *testing.T) {
 	runGit(t, projectDir, "add", ".agents/skills/legacy/README.md")
 	runGit(t, projectDir, "commit", "-m", "tracked managed path")
 
-	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=local")
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local")
 	if err == nil {
 		t.Fatalf("expected project init error, stdout = %s, stderr = %s", stdout, stderr)
 	}
@@ -458,11 +516,12 @@ func TestDoctorWarnsWhenManagedIgnoreRulesAreMissing(t *testing.T) {
 		"analytics/SKILL.md": "# analytics",
 	})
 
-	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=local"); err != nil {
+	initGitRepo(t, projectDir)
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
 		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
 	}
 	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics"}))
-	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "sync"); err != nil {
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "sync"); err != nil {
 		t.Fatalf("project sync error = %v, stderr = %s", err, stderr)
 	}
 	mustWriteFile(t, filepath.Join(projectDir, ".gitignore"), "# no managed rules\n")
@@ -473,7 +532,7 @@ func TestDoctorWarnsWhenManagedIgnoreRulesAreMissing(t *testing.T) {
 	}
 	for _, want := range []string{
 		"ignore-rules-missing",
-		"run skills project init",
+		"run skills init",
 		"doctor: 0 errors, 1 warnings",
 	} {
 		if !strings.Contains(stdout, want) {
@@ -509,13 +568,14 @@ func TestDoctorErrorsWhenManagedPathsAreTracked(t *testing.T) {
 	}
 }
 
-func TestSkillsInitProjectFlagCreatesRepoLocalWorkspaceWithoutGlobalConfig(t *testing.T) {
+func TestSkillsInitCreatesRepoLocalWorkspaceWithoutGlobalConfig(t *testing.T) {
 	env := newTestEnv(t)
 	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
 
-	stdout, stderr, err := executeCommandInDirWithInput(t, env, projectDir, strings.NewReader(""), "init", "--project", "--cache=local")
+	stdout, stderr, err := executeCommandInDirWithInput(t, env, projectDir, strings.NewReader(""), "init", "--cache=local")
 	if err != nil {
-		t.Fatalf("skills init --project error = %v, stderr = %s", err, stderr)
+		t.Fatalf("skills init error = %v, stderr = %s", err, stderr)
 	}
 	for _, path := range []string{
 		filepath.Join(projectDir, ".agents", "manifest.yaml"),
@@ -535,13 +595,14 @@ func TestSkillsInitProjectFlagCreatesRepoLocalWorkspaceWithoutGlobalConfig(t *te
 	}
 }
 
-func TestSkillsInitProjectFlagRequiresCacheModeWhenRepoIsNotConfigured(t *testing.T) {
+func TestSkillsInitRequiresCacheModeWhenRepoIsNotConfigured(t *testing.T) {
 	env := newTestEnv(t)
-	projectDir := t.TempDir()
+	repoRoot := t.TempDir()
+	initGitRepo(t, repoRoot)
 
-	stdout, stderr, err := executeCommandInDirWithInput(t, env, projectDir, strings.NewReader(""), "init", "--project")
+	stdout, stderr, err := executeCommandInDirWithInput(t, env, repoRoot, strings.NewReader(""), "init")
 	if err == nil {
-		t.Fatalf("expected skills init --project to fail, stdout = %s, stderr = %s", stdout, stderr)
+		t.Fatalf("expected skills init to fail, stdout = %s, stderr = %s", stdout, stderr)
 	}
 	if !strings.Contains(err.Error(), "project cache mode is not configured yet; use --cache=local or --cache=global") {
 		t.Fatalf("unexpected error: %v", err)
@@ -551,8 +612,9 @@ func TestSkillsInitProjectFlagRequiresCacheModeWhenRepoIsNotConfigured(t *testin
 func TestProjectInitWithGlobalCacheCreatesLocalSettingsWithoutLocalCacheDirs(t *testing.T) {
 	env := newTestEnv(t)
 	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
 
-	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=global")
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=global")
 	if err != nil {
 		t.Fatalf("project init --cache=global error = %v, stderr = %s", err, stderr)
 	}
@@ -573,8 +635,9 @@ func TestProjectSyncWithGlobalCacheUsesSharedRootsButRepoLocalInstalls(t *testin
 	env := newTestEnv(t)
 	projectDir := t.TempDir()
 	resolvedProjectDir := resolvedPath(t, projectDir)
+	initGitRepo(t, projectDir)
 
-	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=global"); err != nil {
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=global"); err != nil {
 		t.Fatalf("project init --cache=global error = %v, stderr = %s", err, stderr)
 	}
 
@@ -584,7 +647,7 @@ func TestProjectSyncWithGlobalCacheUsesSharedRootsButRepoLocalInstalls(t *testin
 	commit := gitOutput(t, remote, "rev-parse", "HEAD")
 	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics"}))
 
-	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "sync"); err != nil {
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "sync"); err != nil {
 		t.Fatalf("project sync error = %v, stderr = %s", err, stderr)
 	}
 
@@ -613,22 +676,7 @@ func TestSkillsInitFailsOutsideRepoWithoutExplicitScope(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected skills init error, stdout = %s, stderr = %s", stdout, stderr)
 	}
-	if !strings.Contains(err.Error(), "outside a Git repo; use skills init --project or skills init --global") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestSkillsInitFailsInsideRepoWithoutArtifactsWhenNonInteractive(t *testing.T) {
-	requireGit(t)
-	env := newTestEnv(t)
-	repoRoot := t.TempDir()
-	initGitRepo(t, repoRoot)
-
-	stdout, stderr, err := executeCommandInDirWithInput(t, env, repoRoot, strings.NewReader(""), "init")
-	if err == nil {
-		t.Fatalf("expected skills init error, stdout = %s, stderr = %s", stdout, stderr)
-	}
-	if !strings.Contains(err.Error(), "inside a Git repo but no skills artifacts exist yet; use skills init --project or skills init --global") {
+	if !strings.Contains(err.Error(), "outside a Git repo; use skills init --global") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -639,7 +687,7 @@ func TestSkillsInitRoutesToRepoRootWhenArtifactsExist(t *testing.T) {
 	repoRoot := t.TempDir()
 	initGitRepo(t, repoRoot)
 
-	if _, stderr, err := executeCommandInDir(t, env, repoRoot, "project", "init", "--cache=local"); err != nil {
+	if _, stderr, err := executeCommandInDir(t, env, repoRoot, "init", "--cache=local"); err != nil {
 		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
 	}
 
@@ -662,15 +710,19 @@ func TestProjectSyncCreatesCanonicalAndClaudeLinks(t *testing.T) {
 	env := newTestEnv(t)
 	projectDir := t.TempDir()
 	resolvedProjectDir := resolvedPath(t, projectDir)
+	initGitRepo(t, projectDir)
 
 	remote := initRemoteRepo(t, map[string]string{
 		"analytics/SKILL.md": "# analytics",
 	})
 	commit := gitOutput(t, remote, "rev-parse", "HEAD")
 
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
+		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
+	}
 	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics"}))
 
-	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "sync")
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "sync")
 	if err != nil {
 		t.Fatalf("project sync error = %v, stderr = %s", err, stderr)
 	}
@@ -691,8 +743,7 @@ func TestProjectSyncCreatesCanonicalAndClaudeLinks(t *testing.T) {
 		t.Fatalf("Readlink(%q) error = %v", canonicalPath, err)
 	}
 
-	wantTarget := filepath.Join(env.dataHome, "skills", "worktrees", projectID, "repo-one", commit, "analytics")
-	wantTarget = filepath.Join(resolvedProjectDir, ".agents", "cache", "worktrees", projectID, "repo-one", commit, "analytics")
+	wantTarget := filepath.Join(resolvedProjectDir, ".agents", "cache", "worktrees", projectID, "repo-one", commit, "analytics")
 	if target != wantTarget {
 		t.Fatalf("canonical target = %q, want %q", target, wantTarget)
 	}
@@ -709,7 +760,7 @@ func TestProjectSyncCreatesCanonicalAndClaudeLinks(t *testing.T) {
 		t.Fatalf("state file missing: %v", err)
 	}
 
-	statusOut, statusErr, err := executeCommandInDir(t, env, projectDir, "project", "status")
+	statusOut, statusErr, err := executeCommandInDir(t, env, projectDir, "status")
 	if err != nil {
 		t.Fatalf("project status error = %v, stderr = %s", err, statusErr)
 	}
@@ -723,21 +774,25 @@ func TestProjectSyncPrunesManagedCanonicalAndClaudeLinks(t *testing.T) {
 	env := newTestEnv(t)
 	projectDir := t.TempDir()
 	resolvedProjectDir := resolvedPath(t, projectDir)
+	initGitRepo(t, projectDir)
 
 	remote := initRemoteRepo(t, map[string]string{
 		"analytics/SKILL.md": "# analytics",
 		"lint/SKILL.md":      "# lint",
 	})
 
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
+		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
+	}
 	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics", "lint"}))
 
-	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "sync"); err != nil {
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "sync"); err != nil {
 		t.Fatalf("initial project sync error = %v, stderr = %s", err, stderr)
 	}
 
 	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics"}))
 
-	statusOut, statusErr, err := executeCommandInDir(t, env, projectDir, "project", "status")
+	statusOut, statusErr, err := executeCommandInDir(t, env, projectDir, "status")
 	if err != nil {
 		t.Fatalf("project status error = %v, stderr = %s", err, statusErr)
 	}
@@ -748,7 +803,7 @@ func TestProjectSyncPrunesManagedCanonicalAndClaudeLinks(t *testing.T) {
 		t.Fatalf("status output missing stale lint claude path:\n%s", statusOut)
 	}
 
-	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "sync")
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "sync")
 	if err != nil {
 		t.Fatalf("project sync prune error = %v, stderr = %s", err, stderr)
 	}
@@ -774,15 +829,19 @@ func TestProjectUpdateAndDryRunFlow(t *testing.T) {
 	env := newTestEnv(t)
 	projectDir := t.TempDir()
 	resolvedProjectDir := resolvedPath(t, projectDir)
+	initGitRepo(t, projectDir)
 
 	remote := initRemoteRepo(t, map[string]string{
 		"analytics/SKILL.md": "# analytics",
 	})
 	commitOne := gitOutput(t, remote, "rev-parse", "HEAD")
 
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
+		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
+	}
 	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics"}))
 
-	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "sync"); err != nil {
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "sync"); err != nil {
 		t.Fatalf("initial project sync error = %v, stderr = %s", err, stderr)
 	}
 
@@ -794,7 +853,7 @@ func TestProjectUpdateAndDryRunFlow(t *testing.T) {
 	canonicalPath := filepath.Join(resolvedProjectDir, ".agents", "skills", "analytics")
 	claudePath := filepath.Join(resolvedProjectDir, ".claude", "skills", "analytics")
 
-	statusOut, statusErr, err := executeCommandInDir(t, env, projectDir, "project", "status")
+	statusOut, statusErr, err := executeCommandInDir(t, env, projectDir, "status")
 	if err != nil {
 		t.Fatalf("project status error = %v, stderr = %s", err, statusErr)
 	}
@@ -802,7 +861,7 @@ func TestProjectUpdateAndDryRunFlow(t *testing.T) {
 	assertOutputHasFields(t, statusOut, "repo-one", "analytics", "linked", canonicalPath)
 	assertOutputHasFields(t, statusOut, "repo-one", "analytics", "linked", claudePath)
 
-	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "update", "--dry-run")
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "update", "--dry-run")
 	if err != nil {
 		t.Fatalf("project update --dry-run error = %v, stderr = %s", err, stderr)
 	}
@@ -811,7 +870,7 @@ func TestProjectUpdateAndDryRunFlow(t *testing.T) {
 	}
 	assertOutputHasFields(t, stdout, "repo-one", "updated", "main", commitTwo[:12])
 
-	statusOut, statusErr, err = executeCommandInDir(t, env, projectDir, "project", "status")
+	statusOut, statusErr, err = executeCommandInDir(t, env, projectDir, "status")
 	if err != nil {
 		t.Fatalf("project status after dry-run error = %v, stderr = %s", err, statusErr)
 	}
@@ -827,13 +886,13 @@ func TestProjectUpdateAndDryRunFlow(t *testing.T) {
 		t.Fatalf("dry-run should not change canonical link target, got %q", target)
 	}
 
-	stdout, stderr, err = executeCommandInDir(t, env, projectDir, "project", "update")
+	stdout, stderr, err = executeCommandInDir(t, env, projectDir, "update")
 	if err != nil {
 		t.Fatalf("project update error = %v, stderr = %s", err, stderr)
 	}
 	assertOutputHasFields(t, stdout, "repo-one", "updated", "main", commitTwo[:12])
 
-	statusOut, statusErr, err = executeCommandInDir(t, env, projectDir, "project", "status")
+	statusOut, statusErr, err = executeCommandInDir(t, env, projectDir, "status")
 	if err != nil {
 		t.Fatalf("project status error = %v, stderr = %s", err, statusErr)
 	}
@@ -841,7 +900,7 @@ func TestProjectUpdateAndDryRunFlow(t *testing.T) {
 	assertOutputHasFields(t, statusOut, "repo-one", "analytics", "stale", canonicalPath)
 	assertOutputHasFields(t, statusOut, "repo-one", "analytics", "linked", claudePath)
 
-	stdout, stderr, err = executeCommandInDir(t, env, projectDir, "project", "sync", "--dry-run")
+	stdout, stderr, err = executeCommandInDir(t, env, projectDir, "sync", "--dry-run")
 	if err != nil {
 		t.Fatalf("project sync --dry-run error = %v, stderr = %s", err, stderr)
 	}
@@ -851,7 +910,7 @@ func TestProjectUpdateAndDryRunFlow(t *testing.T) {
 	assertOutputHasFields(t, stdout, "repo-one", "analytics", "would-update", canonicalPath)
 	assertOutputHasFields(t, stdout, "repo-one", "analytics", "linked", claudePath)
 
-	stdout, stderr, err = executeCommandInDir(t, env, projectDir, "project", "sync")
+	stdout, stderr, err = executeCommandInDir(t, env, projectDir, "sync")
 	if err != nil {
 		t.Fatalf("project sync error = %v, stderr = %s", err, stderr)
 	}
@@ -872,15 +931,19 @@ func TestProjectStatusReportsInspectFailure(t *testing.T) {
 	requireGit(t)
 	env := newTestEnv(t)
 	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
 
 	remote := initRemoteRepo(t, map[string]string{
 		"analytics/SKILL.md": "# analytics",
 	})
 	commit := gitOutput(t, remote, "rev-parse", "HEAD")
 
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
+		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
+	}
 	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics"}))
 
-	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "sync"); err != nil {
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "sync"); err != nil {
 		t.Fatalf("initial project sync error = %v, stderr = %s", err, stderr)
 	}
 
@@ -894,7 +957,7 @@ func TestProjectStatusReportsInspectFailure(t *testing.T) {
 		t.Fatalf("WriteFile(%q) error = %v", statePath, err)
 	}
 
-	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "status")
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "status")
 	if err != nil {
 		t.Fatalf("project status error = %v, stderr = %s", err, stderr)
 	}
@@ -910,7 +973,7 @@ func TestHomeInitAndSyncUsesSeparateSharedPaths(t *testing.T) {
 	requireGit(t)
 	env := newTestEnv(t)
 
-	stdout, stderr, err := executeCommand(t, env, "home", "init")
+	stdout, stderr, err := executeCommand(t, env, "init", "--global")
 	if err != nil {
 		t.Fatalf("home init error = %v, stderr = %s", err, stderr)
 	}
@@ -924,7 +987,7 @@ func TestHomeInitAndSyncUsesSeparateSharedPaths(t *testing.T) {
 	manifestPath := filepath.Join(env.home, ".agents", "manifest.yaml")
 	mustWriteFile(t, manifestPath, manifestFor(remote, []string{"analytics"}))
 
-	stdout, stderr, err = executeCommand(t, env, "home", "sync")
+	stdout, stderr, err = executeCommand(t, env, "sync", "--global")
 	if err != nil {
 		t.Fatalf("home sync error = %v, stderr = %s", err, stderr)
 	}

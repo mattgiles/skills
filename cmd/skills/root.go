@@ -27,13 +27,14 @@ func newRootCommand() *cobra.Command {
 	cmd.PersistentFlags().Bool("verbose", false, "Show detailed diagnostic output")
 
 	cmd.AddCommand(newInitCommand())
+	cmd.AddCommand(newStatusCommand())
+	cmd.AddCommand(newSyncCommand())
+	cmd.AddCommand(newUpdateCommand())
 	cmd.AddCommand(newConfigCommand())
 	cmd.AddCommand(newDoctorCommand())
 	cmd.AddCommand(newSelfCommand())
 	cmd.AddCommand(newSourceCommand())
 	cmd.AddCommand(newSkillCommand())
-	cmd.AddCommand(newHomeCommand())
-	cmd.AddCommand(newProjectCommand())
 	cmd.AddCommand(newVersionCommand())
 
 	return cmd

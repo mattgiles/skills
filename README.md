@@ -60,13 +60,13 @@ skills self update
 
 ## Initialize
 
-Inside a Git repo, `skills init` will prompt you to choose between repo-local and global initialization if the repo does not already contain `skills` artifacts.
+Inside a Git repo, `skills init` initializes repo-local state by default.
 
 You can always choose explicitly:
 
 ```bash
-skills init --project --cache=local
-skills init --project --cache=global
+skills init --cache=local
+skills init --cache=global
 skills init --global
 ```
 
@@ -79,7 +79,7 @@ Use this when you want a repo to declare and install its own skills in `.agents/
 Initialize the project with a repo-local cache:
 
 ```bash
-skills init --project --cache=local
+skills init --cache=local
 ```
 
 That creates:
@@ -115,13 +115,13 @@ skills:
 Sync the project:
 
 ```bash
-skills project sync
+skills sync
 ```
 
 Inspect the result:
 
 ```bash
-skills project status
+skills status
 skills doctor
 ```
 
@@ -130,10 +130,10 @@ Project installs are canonical symlinks in `.agents/skills/`.
 If you want the repo to keep its installs in `.agents/skills` but reuse a shared machine-level Git cache, initialize it with:
 
 ```bash
-skills init --project --cache=global
+skills init --cache=global
 ```
 
-That writes an untracked `.agents/local.yaml` file for your user and makes future `project` commands use the global clone/worktree roots from your `skills` config, while still installing into the repo.
+That writes an untracked `.agents/local.yaml` file for your user and makes future repo syncs use the global clone/worktree roots from your `skills` config, while still installing into the repo.
 
 ### Global / Home Workflow
 
@@ -178,13 +178,13 @@ skills:
 Sync shared home installs:
 
 ```bash
-skills home sync
+skills sync --global
 ```
 
 Inspect the result:
 
 ```bash
-skills home status
+skills status --global
 skills doctor --global
 ```
 
@@ -203,8 +203,8 @@ The lifecycle is the same in both workflows:
 When you want newer commits for the same refs, run:
 
 ```bash
-skills project update --sync
-skills home update --sync
+skills update --sync
+skills update --global --sync
 ```
 
 ## Project Installs vs Global Installs

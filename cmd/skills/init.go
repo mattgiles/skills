@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,68 +10,34 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/mattgiles/skills/internal/gitrepo"
 	"github.com/mattgiles/skills/internal/project"
 )
 
 func newInitCommand() *cobra.Command {
-	var projectScope bool
 	var globalScope bool
 	var cacheMode string
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize repo-local or shared home skills state",
+		Short: "Initialize repo-local state by default, or shared home state with --global",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if projectScope && globalScope {
-				return errors.New("choose only one of --project or --global")
-			}
-
 			cwd, err := os.Getwd()
 			if err != nil {
 				return err
 			}
 
-			if projectScope {
-				return runProjectInit(cmd, cwd, cacheMode)
-			}
 			if globalScope {
 				return runHomeInit(cmd)
 			}
 
-			info, err := gitrepo.Discover(context.Background(), cwd)
+			projectRoot, err := resolveRepoRoot(cwd, false)
 			if err != nil {
-				return err
-			}
-			if info.Root == "" {
-				return errors.New("outside a Git repo; use skills init --project or skills init --global")
-			}
-
-			projectRoot := info.Root
-			artifacts, err := project.InspectProjectArtifacts(projectRoot)
-			if err != nil {
-				return err
-			}
-			if artifacts.HasArtifacts {
-				return runProjectInit(cmd, projectRoot, cacheMode)
-			}
-
-			if !isInteractive(cmd.InOrStdin(), cmd.OutOrStdout()) {
-				return errors.New("inside a Git repo but no skills artifacts exist yet; use skills init --project or skills init --global")
-			}
-
-			scope, err := promptInitScope(cmd)
-			if err != nil {
-				return err
-			}
-			if scope == "global" {
-				return runHomeInit(cmd)
+				return errors.New("outside a Git repo; use skills init --global")
 			}
 			return runProjectInit(cmd, projectRoot, cacheMode)
 		},
 	}
 
-	cmd.Flags().BoolVar(&projectScope, "project", false, "Initialize repo-local project state")
 	cmd.Flags().BoolVar(&globalScope, "global", false, "Initialize shared home/global state")
 	cmd.Flags().StringVar(&cacheMode, "cache", "", "Project cache backend: local or global")
 	return cmd
@@ -132,28 +97,6 @@ func runHomeInit(cmd *cobra.Command) error {
 	return nil
 }
 
-func promptInitScope(cmd *cobra.Command) (string, error) {
-	fmt.Fprintln(cmd.OutOrStdout(), "Choose skills initialization mode:")
-	fmt.Fprintln(cmd.OutOrStdout(), "1. repo-local")
-	fmt.Fprintln(cmd.OutOrStdout(), "2. global")
-	fmt.Fprint(cmd.OutOrStdout(), "> ")
-
-	reader := bufio.NewReader(cmd.InOrStdin())
-	choice, err := reader.ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", err
-	}
-
-	switch strings.TrimSpace(strings.ToLower(choice)) {
-	case "1", "repo-local", "repo", "project":
-		return "project", nil
-	case "2", "global", "home":
-		return "global", nil
-	default:
-		return "", errors.New("invalid init choice; use skills init --project or skills init --global")
-	}
-}
-
 func resolveProjectInitCacheMode(cmd *cobra.Command, projectDir string, requested string) (project.CacheMode, error) {
 	if requested != "" {
 		return normalizeCacheMode(requested)
@@ -165,11 +108,8 @@ func resolveProjectInitCacheMode(cmd *cobra.Command, projectDir string, requeste
 	}
 
 	if !isInteractive(cmd.InOrStdin(), cmd.OutOrStdout()) {
-		if current.Exists || current.Implicit {
-			if current.Exists {
-				return current.Mode, nil
-			}
-			return "", errors.New("project cache mode is not configured yet; use --cache=local or --cache=global")
+		if current.Exists {
+			return current.Mode, nil
 		}
 		return "", errors.New("project cache mode is not configured yet; use --cache=local or --cache=global")
 	}
@@ -196,7 +136,10 @@ func promptProjectCacheMode(cmd *cobra.Command, current project.CacheMode) (proj
 
 	trimmed := strings.TrimSpace(strings.ToLower(choice))
 	if trimmed == "" {
-		return current, nil
+		if current != "" {
+			return current, nil
+		}
+		return project.CacheModeLocal, nil
 	}
 
 	switch trimmed {

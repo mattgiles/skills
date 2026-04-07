@@ -24,6 +24,6 @@ There are two discovery modes in the current implementation:
 
 - one repo can contain many skills
 - nested skill directories are allowed
-- duplicate directory names within a single repo are ambiguous for project sync, even if they live at different relative paths
+- duplicate directory names within a single repo are ambiguous for repo sync, even if they live at different relative paths
 
 If more than one discovered directory has the same name for the selected commit, project link resolution fails with `ambiguous-skill`.

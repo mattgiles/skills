@@ -4,7 +4,7 @@ Project installs always use repo-local canonical directories. You do not need pe
 
 ## Project-Local Canonical Paths
 
-`skills project init` and `skills project sync` use:
+`skills init` and `skills sync` use:
 
 - `.agents/skills/<skill-name>` for canonical installed skills
 - `.claude/skills/<skill-name>` for Claude adapters

@@ -7,7 +7,7 @@ Each project declares the sources, refs, and canonical installed skills it wants
 From the project directory:
 
 ```bash
-skills project init --cache=local
+skills init --cache=local
 ```
 
 This creates:
@@ -56,7 +56,7 @@ skills:
 Run:
 
 ```bash
-skills project status
+skills status
 ```
 
 If the manifest is missing or invalid, the command fails with an error.
