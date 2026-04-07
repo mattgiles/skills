@@ -107,9 +107,9 @@ func TestRepoRootPathExpandsHome(t *testing.T) {
 	}
 }
 
-func TestDefaultConfigPathUsesXDGConfigHome(t *testing.T) {
-	xdg := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", xdg)
+func TestDefaultConfigPathUsesSkillsConfigHome(t *testing.T) {
+	configHome := t.TempDir()
+	t.Setenv("SKILLS_CONFIG_HOME", configHome)
 	t.Setenv("HOME", t.TempDir())
 
 	got, err := DefaultConfigPath()
@@ -117,15 +117,15 @@ func TestDefaultConfigPathUsesXDGConfigHome(t *testing.T) {
 		t.Fatalf("DefaultConfigPath() error = %v", err)
 	}
 
-	want := filepath.Join(xdg, "skills", "config.yaml")
+	want := filepath.Join(configHome, "skills", "config.yaml")
 	if got != want {
 		t.Fatalf("DefaultConfigPath() = %q, want %q", got, want)
 	}
 }
 
-func TestDefaultConfigUsesXDGDataHome(t *testing.T) {
+func TestDefaultConfigUsesSkillsDataHome(t *testing.T) {
 	dataHome := t.TempDir()
-	t.Setenv("XDG_DATA_HOME", dataHome)
+	t.Setenv("SKILLS_DATA_HOME", dataHome)
 
 	cfg := DefaultConfig()
 	want := filepath.Join(dataHome, "skills", "repos")

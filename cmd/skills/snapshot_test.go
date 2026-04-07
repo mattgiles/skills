@@ -134,8 +134,8 @@ func newSnapshotEnv(t *testing.T) snapshotEnv {
 	root := resolvedPath(t, t.TempDir())
 	env := snapshotEnv{
 		testEnv: testEnv{
-			configHome: filepath.Join(root, "xdg-config"),
-			dataHome:   filepath.Join(root, "xdg-data"),
+			configHome: filepath.Join(root, "skills-config"),
+			dataHome:   filepath.Join(root, "skills-data"),
 			home:       filepath.Join(root, "home"),
 		},
 		root:       root,

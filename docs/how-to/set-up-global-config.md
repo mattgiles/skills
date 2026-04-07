@@ -10,7 +10,7 @@ skills config init
 
 Default config path:
 
-- `$XDG_CONFIG_HOME/skills/config.yaml` when `XDG_CONFIG_HOME` is set
+- `$SKILLS_CONFIG_HOME/skills/config.yaml` when `SKILLS_CONFIG_HOME` is set
 - otherwise `~/.config/skills/config.yaml`
 
 ## Start From The Default Shape
@@ -28,7 +28,7 @@ agents:
 sources: {}
 ```
 
-If `XDG_DATA_HOME` is set, the default `repo_root` and `worktree_root` move under that directory instead.
+If `SKILLS_DATA_HOME` is set, the default `repo_root` and `worktree_root` move under that directory instead.
 
 ## Change Storage Roots
 

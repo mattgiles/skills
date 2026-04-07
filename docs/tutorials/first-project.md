@@ -41,8 +41,8 @@ This tutorial keeps config and data in a temporary directory instead of your rea
 mkdir -p /tmp/skills-tutorial
 cd /tmp/skills-tutorial
 
-export XDG_CONFIG_HOME="$PWD/xdg-config"
-export XDG_DATA_HOME="$PWD/xdg-data"
+export SKILLS_CONFIG_HOME="$PWD/skills-config"
+export SKILLS_DATA_HOME="$PWD/skills-data"
 ```
 
 ## 3. Create A Local Skill Repository
@@ -73,7 +73,7 @@ $SKILLS_BIN config init
 You should see output like:
 
 ```text
-created config: /tmp/skills-tutorial/xdg-config/skills/config.yaml
+created config: /tmp/skills-tutorial/skills-config/skills/config.yaml
 ```
 
 ## 5. Register And Sync The Source
@@ -148,7 +148,7 @@ You can also inspect the symlink directly:
 ls -l ./agent-skills
 ```
 
-The link target should point into the worktree root under `XDG_DATA_HOME`.
+The link target should point into the worktree root under `SKILLS_DATA_HOME`.
 
 ## What You Learned
 

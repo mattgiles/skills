@@ -444,8 +444,8 @@ func executeCommandInDir(t *testing.T, env testEnv, dir string, args ...string) 
 	cmd.SetErr(&stderr)
 
 	t.Setenv("HOME", env.home)
-	t.Setenv("XDG_CONFIG_HOME", env.configHome)
-	t.Setenv("XDG_DATA_HOME", env.dataHome)
+	t.Setenv("SKILLS_CONFIG_HOME", env.configHome)
+	t.Setenv("SKILLS_DATA_HOME", env.dataHome)
 
 	originalWD, err := os.Getwd()
 	if err != nil {

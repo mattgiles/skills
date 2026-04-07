@@ -4,7 +4,7 @@
 
 Default config path:
 
-- `$XDG_CONFIG_HOME/skills/config.yaml` when `XDG_CONFIG_HOME` is set
+- `$SKILLS_CONFIG_HOME/skills/config.yaml` when `SKILLS_CONFIG_HOME` is set
 - otherwise `~/.config/skills/config.yaml`
 
 ## Schema
@@ -58,10 +58,10 @@ agents:
 sources: {}
 ```
 
-If `XDG_DATA_HOME` is set, the default storage roots become:
+If `SKILLS_DATA_HOME` is set, the default storage roots become:
 
-- `$XDG_DATA_HOME/skills/repos`
-- `$XDG_DATA_HOME/skills/worktrees`
+- `$SKILLS_DATA_HOME/skills/repos`
+- `$SKILLS_DATA_HOME/skills/worktrees`
 
 ## Path Resolution
 

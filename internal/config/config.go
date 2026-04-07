@@ -41,7 +41,7 @@ func DefaultConfig() Config {
 }
 
 func DefaultConfigPath() (string, error) {
-	configHome, err := xdgConfigHome()
+	configHome, err := skillsConfigHome()
 	if err != nil {
 		return "", err
 	}
@@ -161,21 +161,21 @@ func ensureDefaults(cfg *Config) {
 }
 
 func defaultRepoRootValue() string {
-	if value := os.Getenv("XDG_DATA_HOME"); strings.TrimSpace(value) != "" {
+	if value := os.Getenv("SKILLS_DATA_HOME"); strings.TrimSpace(value) != "" {
 		return filepath.Join(value, "skills", "repos")
 	}
 	return "~/.local/share/skills/repos"
 }
 
 func defaultWorktreeRootValue() string {
-	if value := os.Getenv("XDG_DATA_HOME"); strings.TrimSpace(value) != "" {
+	if value := os.Getenv("SKILLS_DATA_HOME"); strings.TrimSpace(value) != "" {
 		return filepath.Join(value, "skills", "worktrees")
 	}
 	return "~/.local/share/skills/worktrees"
 }
 
-func xdgConfigHome() (string, error) {
-	if value := os.Getenv("XDG_CONFIG_HOME"); strings.TrimSpace(value) != "" {
+func skillsConfigHome() (string, error) {
+	if value := os.Getenv("SKILLS_CONFIG_HOME"); strings.TrimSpace(value) != "" {
 		return ExpandPath(value)
 	}
 
