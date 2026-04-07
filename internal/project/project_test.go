@@ -7,12 +7,12 @@ import (
 
 func TestValidateManifestRejectsDuplicateSkills(t *testing.T) {
 	manifest := Manifest{
-		Sources: map[string]ProjectSource{
+		Sources: map[string]ManifestSource{
 			"repo-one": {Ref: "main"},
 		},
-		Skills: []ProjectSkill{
-			{Source: "repo-one", Name: "analytics", Agents: []string{"codex"}},
-			{Source: "repo-one", Name: "analytics", Agents: []string{"claude"}},
+		Skills: []ManifestSkill{
+			{Source: "repo-one", Name: "analytics"},
+			{Source: "repo-one", Name: "analytics"},
 		},
 	}
 
@@ -42,11 +42,14 @@ func TestStateRoundTripIncludesSourceState(t *testing.T) {
 	projectDir := t.TempDir()
 
 	state := State{
-		Sources: []ProjectSourceState{
+		Sources: []SourceState{
 			{Source: "repo-one", Ref: "main", ResolvedCommit: "abc123"},
 		},
-		Links: []ManagedLink{
-			{Path: "/tmp/skill", Target: "/tmp/target", Source: "repo-one", Skill: "analytics", Agent: "codex"},
+		SkillLinks: []ManagedLink{
+			{Path: "/tmp/skill", Target: "/tmp/target", Source: "repo-one", Skill: "analytics"},
+		},
+		ClaudeLinks: []ManagedLink{
+			{Path: "/tmp/claude", Target: "/tmp/skill", Source: "repo-one", Skill: "analytics"},
 		},
 	}
 
@@ -65,10 +68,13 @@ func TestStateRoundTripIncludesSourceState(t *testing.T) {
 	if loaded.Sources[0].ResolvedCommit != "abc123" {
 		t.Fatalf("ResolvedCommit = %q, want %q", loaded.Sources[0].ResolvedCommit, "abc123")
 	}
-	if len(loaded.Links) != 1 {
-		t.Fatalf("len(loaded.Links) = %d, want 1", len(loaded.Links))
+	if len(loaded.SkillLinks) != 1 {
+		t.Fatalf("len(loaded.SkillLinks) = %d, want 1", len(loaded.SkillLinks))
 	}
-	if got := StatePath(projectDir); got != filepath.Join(projectDir, ".skills", "state.yaml") {
+	if len(loaded.ClaudeLinks) != 1 {
+		t.Fatalf("len(loaded.ClaudeLinks) = %d, want 1", len(loaded.ClaudeLinks))
+	}
+	if got := StatePath(projectDir); got != filepath.Join(projectDir, ".agents", "state.yaml") {
 		t.Fatalf("StatePath() = %q", got)
 	}
 }

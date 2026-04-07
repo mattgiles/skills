@@ -1,6 +1,6 @@
 # Config Vs Project
 
-`skills` separates machine concerns from project concerns.
+`skills` separates machine concerns, shared home concerns, and project concerns.
 
 ## Global Config
 
@@ -8,20 +8,27 @@ Global config owns machine-level defaults:
 
 - where canonical repos live
 - where worktrees live
-- which agent roots exist on this machine
+- where shared home skills live
+- where shared home Claude adapters live
 - which source aliases are already registered
 
 ## Project Manifest
 
-`.skills.yaml` owns project intent:
+`.agents/manifest.yaml` owns project intent:
 
 - which sources the project needs
 - which ref each source should resolve
-- which agents should receive which skills
-- any project-local agent root overrides
+- which skills should exist in the project’s canonical `.agents/skills`
+
+## Home Manifest
+
+`~/.agents/manifest.yaml` owns shared home intent:
+
+- which sources should be available at home scope
+- which shared skills should exist in `~/.agents/skills`
 
 ## Why Keep Them Separate
 
-This keeps the project manifest portable. A repository can declare the skills it depends on without assuming that every machine has the same global filesystem layout.
+This keeps clone storage and worktree storage machine-local, while keeping actual installed skill sets isolated by scope.
 
-It also lets local users override agent destinations for testing while preserving the project's dependency declaration.
+Project syncs should not mutate shared home installs. Home syncs should not mutate project installs. Both scopes can still reuse the same canonical clone and worktree backend.

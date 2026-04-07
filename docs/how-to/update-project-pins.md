@@ -1,6 +1,6 @@
 # Update Project Pins
 
-Use `skills project update` to resolve newer commits for project sources. Use `project sync` to move installed links afterward.
+Use `skills project update` to resolve newer commits for project sources. Use `project sync` to move canonical skill links afterward.
 
 ## Update All Project Sources
 
@@ -20,15 +20,13 @@ Typical results:
 skills project update repo-one repo-two
 ```
 
-Unknown aliases fail with `unknown project source`.
-
 ## Preview First
 
 ```bash
 skills project update --dry-run
 ```
 
-This resolves the newer commit and shows the result without changing `.skills/state.yaml`.
+This resolves the newer commit and shows the result without changing `.agents/state.yaml`.
 
 ## Sync Immediately After Updating
 
@@ -46,4 +44,4 @@ After updating:
 skills project status
 ```
 
-If you updated without syncing links, link rows may show `stale`. Run `skills project sync` to bring symlinks forward.
+If you updated without syncing, canonical skill links in `.agents/skills` may show `stale`. Claude adapters can remain `linked` because they point at the canonical paths, not directly at worktree paths.

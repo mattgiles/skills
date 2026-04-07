@@ -16,7 +16,7 @@ import (
 func newProjectCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "project",
-		Short: "Manage project-local skill manifests",
+		Short: "Manage project-local standardized agent skills",
 	}
 
 	cmd.AddCommand(newProjectInitCommand())
@@ -30,7 +30,7 @@ func newProjectCommand() *cobra.Command {
 func newProjectInitCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
-		Short: "Create a project manifest",
+		Short: "Create a project standardized workspace",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projectDir, err := os.Getwd()
 			if err != nil {
@@ -45,7 +45,7 @@ func newProjectInitCommand() *cobra.Command {
 				return err
 			}
 
-			if err := project.SaveManifest(projectDir, project.DefaultManifest()); err != nil {
+			if err := project.InitProject(projectDir); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "created manifest: %s\n", manifestPath)
@@ -57,7 +57,7 @@ func newProjectInitCommand() *cobra.Command {
 func newProjectStatusCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Show manifest, source, and link status for the current project",
+		Short: "Show source, canonical skill, and Claude adapter status for the current project",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := loadConfig()
 			if err != nil {
@@ -85,7 +85,7 @@ func newProjectSyncCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "sync",
-		Short: "Sync declared project skills into target agent directories",
+		Short: "Sync declared project skills into canonical and Claude adapter directories",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := source.EnsureGitAvailable(); err != nil {
 				return err
@@ -159,12 +159,16 @@ func newProjectUpdateCommand() *cobra.Command {
 }
 
 func renderProjectStatus(cmd *cobra.Command, report project.StatusReport, verbose bool) {
+	renderWorkspaceStatus(cmd, report, verbose, "no project sources declared", "no project skills declared")
+}
+
+func renderWorkspaceStatus(cmd *cobra.Command, report project.StatusReport, verbose bool, noSources string, noSkills string) {
 	if len(report.Sources) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "no project sources declared")
+		fmt.Fprintln(cmd.OutOrStdout(), noSources)
 	} else {
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		fmt.Fprintln(cmd.OutOrStdout(), "SOURCES")
 		if verbose {
-			fmt.Fprintln(cmd.OutOrStdout(), "SOURCES")
 			fmt.Fprintln(w, "SOURCE\tSTATUS\tREF\tCOMMIT\tSTORED\tREPO_PATH\tWORKTREE_PATH\tMESSAGE")
 		} else {
 			fmt.Fprintln(w, "SOURCE\tSTATUS\tREF\tCOMMIT\tMESSAGE")
@@ -181,50 +185,82 @@ func renderProjectStatus(cmd *cobra.Command, report project.StatusReport, verbos
 		_ = w.Flush()
 	}
 
-	if len(report.Links) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "no project skills declared")
+	if len(report.SkillLinks) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), noSkills)
 	} else {
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		fmt.Fprintln(cmd.OutOrStdout(), "\nSKILLS")
 		if verbose {
-			fmt.Fprintln(cmd.OutOrStdout(), "\nLINKS")
-			fmt.Fprintln(w, "AGENT\tSOURCE\tSKILL\tSTATUS\tPATH\tTARGET\tMESSAGE")
+			fmt.Fprintln(w, "SOURCE\tSKILL\tSTATUS\tPATH\tTARGET\tMESSAGE")
 		} else {
-			fmt.Fprintln(w, "AGENT\tSOURCE\tSKILL\tSTATUS\tPATH\tMESSAGE")
+			fmt.Fprintln(w, "SOURCE\tSKILL\tSTATUS\tPATH\tMESSAGE")
 		}
-		for _, link := range report.Links {
+		for _, link := range report.SkillLinks {
 			if verbose {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-					link.Agent, link.Source, link.Skill, link.Status, renderVerboseValue(link.Path),
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+					link.Source, link.Skill, link.Status, renderVerboseValue(link.Path),
 					renderVerboseValue(link.Target), renderVerboseValue(link.Message))
 			} else {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", link.Agent, link.Source, link.Skill, link.Status, link.Path, link.Message)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", link.Source, link.Skill, link.Status, link.Path, link.Message)
 			}
 		}
 		_ = w.Flush()
 	}
 
-	if len(report.StaleLinks) > 0 {
+	if len(report.ClaudeLinks) > 0 {
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		fmt.Fprintln(cmd.OutOrStdout(), "\nCLAUDE")
 		if verbose {
-			fmt.Fprintln(cmd.OutOrStdout(), "\nSTALE")
+			fmt.Fprintln(w, "SOURCE\tSKILL\tSTATUS\tPATH\tTARGET\tMESSAGE")
+		} else {
+			fmt.Fprintln(w, "SOURCE\tSKILL\tSTATUS\tPATH\tMESSAGE")
 		}
-		fmt.Fprintln(w, "STALE_PATH\tAGENT\tSOURCE\tSKILL")
-		for _, link := range report.StaleLinks {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", link.Path, link.Agent, link.Source, link.Skill)
+		for _, link := range report.ClaudeLinks {
+			if verbose {
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+					link.Source, link.Skill, link.Status, renderVerboseValue(link.Path),
+					renderVerboseValue(link.Target), renderVerboseValue(link.Message))
+			} else {
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", link.Source, link.Skill, link.Status, link.Path, link.Message)
+			}
+		}
+		_ = w.Flush()
+	}
+
+	if len(report.StaleSkillLinks) > 0 {
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		fmt.Fprintln(cmd.OutOrStdout(), "\nSTALE_SKILLS")
+		fmt.Fprintln(w, "STALE_PATH\tSOURCE\tSKILL")
+		for _, link := range report.StaleSkillLinks {
+			fmt.Fprintf(w, "%s\t%s\t%s\n", link.Path, link.Source, link.Skill)
+		}
+		_ = w.Flush()
+	}
+
+	if len(report.StaleClaudeLinks) > 0 {
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		fmt.Fprintln(cmd.OutOrStdout(), "\nSTALE_CLAUDE")
+		fmt.Fprintln(w, "STALE_PATH\tSOURCE\tSKILL")
+		for _, link := range report.StaleClaudeLinks {
+			fmt.Fprintf(w, "%s\t%s\t%s\n", link.Path, link.Source, link.Skill)
 		}
 		_ = w.Flush()
 	}
 }
 
 func renderProjectSync(cmd *cobra.Command, result project.SyncResult, verbose bool) {
+	renderWorkspaceSync(cmd, result, verbose)
+}
+
+func renderWorkspaceSync(cmd *cobra.Command, result project.SyncResult, verbose bool) {
 	if result.DryRun {
 		fmt.Fprintln(cmd.OutOrStdout(), "dry-run")
 	}
 
 	if len(result.Sources) > 0 {
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		fmt.Fprintln(cmd.OutOrStdout(), "SOURCES")
 		if verbose {
-			fmt.Fprintln(cmd.OutOrStdout(), "SOURCES")
 			fmt.Fprintln(w, "SOURCE\tSTATUS\tREF\tCOMMIT\tSTORED\tREPO_PATH\tWORKTREE_PATH\tMESSAGE")
 		} else {
 			fmt.Fprintln(w, "SOURCE\tSTATUS\tREF\tCOMMIT\tMESSAGE")
@@ -241,33 +277,61 @@ func renderProjectSync(cmd *cobra.Command, result project.SyncResult, verbose bo
 		_ = w.Flush()
 	}
 
-	if len(result.Links) > 0 {
+	if len(result.SkillLinks) > 0 {
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		fmt.Fprintln(cmd.OutOrStdout(), "\nSKILLS")
 		if verbose {
-			fmt.Fprintln(cmd.OutOrStdout(), "\nLINKS")
-			fmt.Fprintln(w, "AGENT\tSOURCE\tSKILL\tSTATUS\tPATH\tTARGET\tMESSAGE")
+			fmt.Fprintln(w, "SOURCE\tSKILL\tSTATUS\tPATH\tTARGET\tMESSAGE")
 		} else {
-			fmt.Fprintln(w, "AGENT\tSOURCE\tSKILL\tSTATUS\tPATH\tMESSAGE")
+			fmt.Fprintln(w, "SOURCE\tSKILL\tSTATUS\tPATH\tMESSAGE")
 		}
-		for _, link := range result.Links {
+		for _, link := range result.SkillLinks {
 			if verbose {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-					link.Agent, link.Source, link.Skill, link.Status, renderVerboseValue(link.Path),
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+					link.Source, link.Skill, link.Status, renderVerboseValue(link.Path),
 					renderVerboseValue(link.Target), renderVerboseValue(link.Message))
 			} else {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", link.Agent, link.Source, link.Skill, link.Status, link.Path, link.Message)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", link.Source, link.Skill, link.Status, link.Path, link.Message)
 			}
 		}
 		_ = w.Flush()
 	}
 
-	if len(result.Pruned) > 0 {
+	if len(result.ClaudeLinks) > 0 {
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		fmt.Fprintln(cmd.OutOrStdout(), "\nCLAUDE")
 		if verbose {
-			fmt.Fprintln(cmd.OutOrStdout(), "\nPRUNED")
+			fmt.Fprintln(w, "SOURCE\tSKILL\tSTATUS\tPATH\tTARGET\tMESSAGE")
+		} else {
+			fmt.Fprintln(w, "SOURCE\tSKILL\tSTATUS\tPATH\tMESSAGE")
 		}
+		for _, link := range result.ClaudeLinks {
+			if verbose {
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+					link.Source, link.Skill, link.Status, renderVerboseValue(link.Path),
+					renderVerboseValue(link.Target), renderVerboseValue(link.Message))
+			} else {
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", link.Source, link.Skill, link.Status, link.Path, link.Message)
+			}
+		}
+		_ = w.Flush()
+	}
+
+	if len(result.PrunedSkillLinks) > 0 {
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		fmt.Fprintln(cmd.OutOrStdout(), "\nPRUNED_SKILLS")
 		fmt.Fprintln(w, "PRUNED_PATH")
-		for _, path := range result.Pruned {
+		for _, path := range result.PrunedSkillLinks {
+			fmt.Fprintf(w, "%s\n", path)
+		}
+		_ = w.Flush()
+	}
+
+	if len(result.PrunedClaudeLinks) > 0 {
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		fmt.Fprintln(cmd.OutOrStdout(), "\nPRUNED_CLAUDE")
+		fmt.Fprintln(w, "PRUNED_PATH")
+		for _, path := range result.PrunedClaudeLinks {
 			fmt.Fprintf(w, "%s\n", path)
 		}
 		_ = w.Flush()
@@ -281,8 +345,8 @@ func renderProjectUpdate(cmd *cobra.Command, result project.UpdateResult, verbos
 
 	if len(result.Sources) > 0 {
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		fmt.Fprintln(cmd.OutOrStdout(), "SOURCES")
 		if verbose {
-			fmt.Fprintln(cmd.OutOrStdout(), "SOURCES")
 			fmt.Fprintln(w, "SOURCE\tSTATUS\tREF\tCOMMIT\tSTORED\tREPO_PATH\tWORKTREE_PATH\tMESSAGE")
 		} else {
 			fmt.Fprintln(w, "SOURCE\tSTATUS\tREF\tCOMMIT\tMESSAGE")

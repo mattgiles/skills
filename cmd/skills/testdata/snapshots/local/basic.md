@@ -11,19 +11,15 @@
 commit "initial"
 ```
 
-`project/.skills.yaml`:
+`project/.agents/manifest.yaml`:
 ```yaml
 sources:
   repo-one:
     url: {{repo:repo-one}}
     ref: main
-agents:
-  codex:
-    skills_dir: ./agent-skills
 skills:
   - source: repo-one
     name: analytics
-    agents: [codex]
 ```
 
 ```command
@@ -35,9 +31,13 @@ SOURCES
 SOURCE  STATUS  REF  COMMIT  STORED  REPO_PATH  WORKTREE_PATH  MESSAGE
 repo-one  resolved  main  <sha>  -  <data>/repos/repo-one  <data>/worktrees/project-<sha>/repo-one/<sha>  -
 
-LINKS
-AGENT  SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE
-codex  repo-one  analytics  created  <project>/agent-skills/analytics  <data>/worktrees/project-<sha>/repo-one/<sha>/analytics  -
+SKILLS
+SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE
+repo-one  analytics  created  <project>/.agents/skills/analytics  <data>/worktrees/project-<sha>/repo-one/<sha>/analytics  -
+
+CLAUDE
+SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE
+repo-one  analytics  created  <project>/.claude/skills/analytics  <project>/.agents/skills/analytics  -
 ```
 
 ```stderr
@@ -52,9 +52,13 @@ SOURCES
 SOURCE  STATUS  REF  COMMIT  STORED  REPO_PATH  WORKTREE_PATH  MESSAGE
 repo-one  up-to-date  main  <sha>  <sha>  <data>/repos/repo-one  <data>/worktrees/project-<sha>/repo-one/<sha>  -
 
-LINKS
-AGENT  SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE
-codex  repo-one  analytics  linked  <project>/agent-skills/analytics  <data>/worktrees/project-<sha>/repo-one/<sha>/analytics  -
+SKILLS
+SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE
+repo-one  analytics  linked  <project>/.agents/skills/analytics  <data>/worktrees/project-<sha>/repo-one/<sha>/analytics  -
+
+CLAUDE
+SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE
+repo-one  analytics  linked  <project>/.claude/skills/analytics  <project>/.agents/skills/analytics  -
 ```
 
 ```stderr

@@ -1,12 +1,18 @@
 # Project State Reference
 
-## File Name
+## Project File Name
 
 ```text
-.skills/state.yaml
+.agents/state.yaml
 ```
 
-This file is managed by `skills`. It records resolved source commits and the managed symlinks created by project sync.
+## Home File Name
+
+```text
+~/.agents/state.yaml
+```
+
+This file is managed by `skills`. It records resolved source commits plus the managed canonical and Claude adapter links for the active scope.
 
 ## Schema
 
@@ -15,12 +21,16 @@ sources:
   - source: repo-one
     ref: main
     resolved_commit: 0123456789abcdef
-links:
-  - path: /abs/path/to/project/agent-skills/analytics
+skill_links:
+  - path: /abs/path/to/.agents/skills/analytics
     target: /abs/path/to/worktree/analytics
     source: repo-one
     skill: analytics
-    agent: codex
+claude_links:
+  - path: /abs/path/to/.claude/skills/analytics
+    target: /abs/path/to/.agents/skills/analytics
+    source: repo-one
+    skill: analytics
 ```
 
 ## `sources[]`
@@ -31,19 +41,16 @@ links:
 | `ref` | string | Ref used when the commit was resolved |
 | `resolved_commit` | string | Full resolved commit hash |
 
-## `links[]`
+## `skill_links[]`
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `path` | string | Managed destination symlink path |
-| `target` | string | Desired worktree target |
-| `source` | string | Source alias |
-| `skill` | string | Skill name |
-| `agent` | string | Agent name |
+Canonical managed symlinks in the scope’s `.agents/skills` directory.
+
+## `claude_links[]`
+
+Managed Claude adapter symlinks in the scope’s `.claude/skills` directory.
 
 ## Notes
 
-- this file is created during `skills project sync`
-- `skills project update` updates stored source commits
-- stale link detection compares the desired links from the manifest with the managed links recorded here
-- if the file becomes inconsistent with reality, `project status` may report `inspect-failed` or `stale`
+- project scope writes `.agents/state.yaml` in the repo
+- home scope writes `~/.agents/state.yaml` by default
+- stale-link detection is tracked separately for canonical skill links and Claude adapter links

@@ -12,11 +12,8 @@ Default config path:
 ```yaml
 repo_root: ~/.local/share/skills/repos
 worktree_root: ~/.local/share/skills/worktrees
-agents:
-  claude:
-    skills_dir: ~/.claude/skills
-  codex:
-    skills_dir: ~/.codex/skills
+shared_skills_dir: ~/.agents/skills
+shared_claude_skills_dir: ~/.claude/skills
 sources:
   repo-one:
     url: git@github.com:example/repo-one.git
@@ -27,15 +24,10 @@ sources:
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
 | `repo_root` | string | no | Canonical clone root |
-| `worktree_root` | string | no | Root for project-pinned worktrees |
-| `agents` | map | no | Global agent install roots |
+| `worktree_root` | string | no | Root for pinned worktrees |
+| `shared_skills_dir` | string | no | Canonical shared home skill directory |
+| `shared_claude_skills_dir` | string | no | Shared home Claude adapter directory |
 | `sources` | map | no | Registered source aliases and URLs |
-
-### `agents.<name>.skills_dir`
-
-| Field | Type | Required | Meaning |
-| --- | --- | --- | --- |
-| `skills_dir` | string | yes for each agent entry | Destination directory for that agent's symlinked skills |
 
 ### `sources.<alias>.url`
 
@@ -45,16 +37,11 @@ sources:
 
 ## Defaults
 
-Built-in default config:
-
 ```yaml
 repo_root: ~/.local/share/skills/repos
 worktree_root: ~/.local/share/skills/worktrees
-agents:
-  claude:
-    skills_dir: ~/.claude/skills
-  codex:
-    skills_dir: ~/.codex/skills
+shared_skills_dir: ~/.agents/skills
+shared_claude_skills_dir: ~/.claude/skills
 sources: {}
 ```
 
@@ -71,4 +58,7 @@ The current implementation:
 - expands environment variables
 - resolves relative paths to absolute paths
 
-Agent `skills_dir` values in global config are treated as path values and resolved before use.
+Home scope derives its manifest and state paths from `shared_skills_dir`:
+
+- manifest: sibling `manifest.yaml`
+- state: sibling `state.yaml`

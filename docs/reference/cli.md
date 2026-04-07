@@ -6,12 +6,6 @@
 skills
 ```
 
-Short description:
-
-```text
-Manage local agent skill sources
-```
-
 Global flags:
 
 | Flag | Meaning |
@@ -31,6 +25,11 @@ skills
 │   └── sync [alias...]
 ├── skill
 │   └── list [--source <alias>]
+├── home
+│   ├── init
+│   ├── status
+│   ├── sync [--dry-run]
+│   └── update [source...] [--dry-run] [--sync]
 └── project
     ├── init
     ├── status
@@ -42,21 +41,9 @@ skills
 
 Creates the default global config file if it does not already exist.
 
-Behavior:
-
-- prints `created config: <path>` on first creation
-- prints `config already exists: <path>` if the file is already present
-
 ## `skills source add <alias> <git-url>`
 
 Registers a source under an alias in the global config.
-
-Arguments:
-
-| Argument | Meaning |
-| --- | --- |
-| `alias` | Local source alias |
-| `git-url` | Git remote URL or local Git repo path |
 
 ## `skills source list`
 
@@ -82,23 +69,6 @@ Verbose-only columns:
 
 Clones missing sources and fetches existing ones.
 
-Arguments:
-
-| Argument | Meaning |
-| --- | --- |
-| `alias...` | Optional subset of configured sources |
-
-Verbose-only columns:
-
-| Column | Meaning |
-| --- | --- |
-| `ACTION` | `cloned` or `fetched` |
-| `ALIAS` | Source alias |
-| `REMOTE` | Default remote ref and commit |
-| `LOCAL` | Local HEAD ref and commit |
-| `PATH` | Canonical repo path |
-| `URL` | Registered source URL |
-
 ## `skills skill list`
 
 Lists discovered skills from synced source repos.
@@ -109,69 +79,39 @@ Flags:
 | --- | --- |
 | `--source <alias>` | Only list skills from the named source |
 
-Default columns:
-
-| Column | Meaning |
-| --- | --- |
-| `SOURCE` | Source alias |
-| `NAME` | Skill directory name |
-| `PATH` | Relative path within the repo |
-
-Verbose-only columns:
-
-| Column | Meaning |
-| --- | --- |
-| `ABS_PATH` | Absolute discovered path |
-
 ## `skills project init`
 
-Creates `.skills.yaml` in the current directory if it does not already exist.
+Creates a project-local standardized workspace:
 
-Behavior:
-
-- prints `created manifest: <path>` on first creation
-- prints `manifest already exists: <path>` if the file already exists
+- `.agents/manifest.yaml`
+- `.agents/skills/`
+- `.claude/skills/`
+- `AGENTS.md` if missing
+- `CLAUDE.md` if missing
 
 ## `skills project status`
 
-Shows project source state, managed link state, and stale managed links.
+Shows:
 
-Default output:
+- source resolution state
+- canonical skill link state in `.agents/skills`
+- Claude adapter link state in `.claude/skills`
+- stale managed links for both sections
 
-- a source table
-- a link table
-- a `STALE_PATH` table when stale managed links exist
+Sections:
 
-Verbose mode also prints `SOURCES`, `LINKS`, and `STALE` headings.
-
-Verbose source columns:
-
-| Column | Meaning |
-| --- | --- |
-| `SOURCE` | Source alias |
-| `STATUS` | Source status |
-| `REF` | Declared ref |
-| `COMMIT` | Desired or current short commit |
-| `STORED` | Stored short commit from project state |
-| `REPO_PATH` | Canonical repo path |
-| `WORKTREE_PATH` | Desired worktree path |
-| `MESSAGE` | Extra detail |
-
-Verbose link columns:
-
-| Column | Meaning |
-| --- | --- |
-| `AGENT` | Agent name |
-| `SOURCE` | Source alias |
-| `SKILL` | Skill name |
-| `STATUS` | Link status |
-| `PATH` | Destination symlink path |
-| `TARGET` | Desired target path |
-| `MESSAGE` | Extra detail |
+- `SOURCES`
+- `SKILLS`
+- `CLAUDE`
+- `STALE_SKILLS` when present
+- `STALE_CLAUDE` when present
 
 ## `skills project sync`
 
-Syncs declared project skills into target agent directories.
+Syncs the declared project skills into:
+
+- canonical project links in `.agents/skills`
+- Claude adapter links in `.claude/skills`
 
 Flags:
 
@@ -179,24 +119,17 @@ Flags:
 | --- | --- |
 | `--dry-run` | Preview sync actions without changing state or links |
 
-Output:
+Sections:
 
-- prints `dry-run` first when previewing
-- prints a source table
-- prints a link table
-- prints a `PRUNED_PATH` table when stale managed links are removed or would be removed
-
-Verbose mode also prints `SOURCES`, `LINKS`, and `PRUNED` headings.
+- `SOURCES`
+- `SKILLS`
+- `CLAUDE`
+- `PRUNED_SKILLS` when present
+- `PRUNED_CLAUDE` when present
 
 ## `skills project update [source...]`
 
-Resolves newer commits for project sources.
-
-Arguments:
-
-| Argument | Meaning |
-| --- | --- |
-| `source...` | Optional subset of declared project sources |
+Resolves newer commits for project sources and optionally runs `project sync`.
 
 Flags:
 
@@ -205,8 +138,27 @@ Flags:
 | `--dry-run` | Preview update actions without changing state or links |
 | `--sync` | Run `project sync` after updating source state |
 
-Output:
+## `skills home init`
 
-- prints `dry-run` first when previewing
-- prints a source table
-- when `--sync` is used, prints a blank line and then the normal `project sync` output
+Creates the shared home manifest at `~/.agents/manifest.yaml` by default and ensures the shared canonical directories exist.
+
+## `skills home status`
+
+Shows source state, canonical shared-skill state in `~/.agents/skills`, and Claude adapter state in `~/.claude/skills`.
+
+## `skills home sync`
+
+Syncs the shared home manifest into:
+
+- `~/.agents/skills`
+- `~/.claude/skills`
+
+Flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--dry-run` | Preview sync actions without changing state or links |
+
+## `skills home update [source...]`
+
+Resolves newer commits for shared home sources and optionally runs `home sync`.

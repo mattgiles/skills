@@ -1,6 +1,6 @@
 # `skills` Documentation
 
-`skills` manages agent skills from Git repositories without copying them around by hand. It keeps canonical clones, resolves project refs to commits, materializes worktrees, and links the selected skill directories into agent-specific roots.
+`skills` manages agent skills from Git repositories without copying them around by hand. It keeps canonical clones, resolves refs to commits, materializes worktrees, and links the selected skill directories into canonical `.agents/skills` trees for either a project or a shared home workspace.
 
 ## Start Here
 

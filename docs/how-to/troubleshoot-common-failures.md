@@ -6,7 +6,7 @@ This page covers the most common current failure modes.
 
 Cause:
 
-- `.skills.yaml` does not exist in the current directory
+- `.agents/manifest.yaml` does not exist in the current scope
 
 Fix:
 
@@ -14,36 +14,17 @@ Fix:
 skills project init
 ```
 
-Then fill in the file.
-
-## `invalid alias`
-
-Cause:
-
-- a source or agent alias contains unsupported characters
-
-Fix:
-
-- use lowercase letters, numbers, `_`, and `-`
-- start with a lowercase letter or number
-
-## `warning: skipping unsynced source`
-
-Cause:
-
-- `skills skill list` saw a configured source that has not been cloned yet
-
-Fix:
+or:
 
 ```bash
-skills source sync <alias>
+skills home init
 ```
 
 ## `missing-source`
 
 Cause:
 
-- a project source is declared, but the canonical repo is not available locally
+- a declared source is not cloned in the canonical repo store
 
 Fix:
 
@@ -51,19 +32,13 @@ Fix:
 skills source sync
 ```
 
-or run:
-
-```bash
-skills project sync
-```
-
-which will clone missing sources as part of sync.
+or re-run the relevant sync command.
 
 ## `invalid-ref`
 
 Cause:
 
-- the project's `ref` could not be resolved in the source repo
+- the declared ref could not be resolved in the source repo
 
 Fix:
 
@@ -99,18 +74,18 @@ Fix:
 
 Cause:
 
-- the destination path exists and is not a managed symlink to the expected target
+- a managed destination in `.agents/skills` or `.claude/skills` exists as a non-symlink or unmanaged symlink
 
 Fix:
 
 - remove or move the conflicting path
-- re-run `skills project sync`
+- re-run sync
 
 ## `stale`
 
 Cause:
 
-- the symlink points at an older managed target than the project currently wants
+- the canonical `.agents/skills` link points at an older managed worktree target than the scope currently wants
 
 Fix:
 
@@ -118,14 +93,8 @@ Fix:
 skills project sync
 ```
 
-## `inspect-failed`
+or:
 
-Cause:
-
-- `skills` could not inspect the desired commit or worktree state
-
-Fix:
-
-- check the error text in the `MESSAGE` column
-- verify the stored commit is valid
-- re-run `skills project sync` if the project state is inconsistent
+```bash
+skills home sync
+```

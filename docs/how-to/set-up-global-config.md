@@ -1,6 +1,6 @@
 # Set Up Global Config
 
-Use global config for machine-level defaults: canonical source storage, worktree storage, agent roots, and registered sources.
+Use global config for machine-level defaults: canonical clone storage, worktree storage, shared home install roots, and registered sources.
 
 ## Create The Default Config
 
@@ -15,16 +15,11 @@ Default config path:
 
 ## Start From The Default Shape
 
-The default file contains:
-
 ```yaml
 repo_root: ~/.local/share/skills/repos
 worktree_root: ~/.local/share/skills/worktrees
-agents:
-  claude:
-    skills_dir: ~/.claude/skills
-  codex:
-    skills_dir: ~/.codex/skills
+shared_skills_dir: ~/.agents/skills
+shared_claude_skills_dir: ~/.claude/skills
 sources: {}
 ```
 
@@ -32,27 +27,16 @@ If `SKILLS_DATA_HOME` is set, the default `repo_root` and `worktree_root` move u
 
 ## Change Storage Roots
 
-Set custom locations by editing the file:
-
 ```yaml
 repo_root: ~/src/skills/repos
 worktree_root: ~/src/skills/worktrees
 ```
 
-`skills` expands `~`, environment variables, and relative paths.
-
-## Add Agent Roots
-
-You can define more agents or change existing roots:
+## Change Shared Home Install Roots
 
 ```yaml
-agents:
-  codex:
-    skills_dir: ~/.codex/skills
-  claude:
-    skills_dir: ~/.claude/skills
-  demo:
-    skills_dir: ~/tmp/demo-skills
+shared_skills_dir: ~/agent-config/.agents/skills
+shared_claude_skills_dir: ~/agent-config/.claude/skills
 ```
 
-For field-level details, see [Global Config Reference](../reference/config.md).
+`skills` expands `~`, environment variables, and relative paths.

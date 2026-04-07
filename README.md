@@ -2,23 +2,29 @@
 
 `skills` is a Go CLI for managing reusable agent skills from Git repositories.
 
-It keeps canonical local clones of skill repos, discovers directories that contain `SKILL.md`, and syncs project-declared skills into agent-specific skill directories with symlinks.
+It keeps canonical source clones in a configurable repo store, resolves refs to pinned worktrees, and exposes installed skills as symlinks in canonical `.agents/skills` directories. It also manages Claude compatibility shims by creating `CLAUDE.md` and `.claude/skills` adapter links.
 
 ## Start Here
 
 - [Documentation Home](docs/index.md)
 - [Tutorial: First Project Sync](docs/tutorials/first-project.md)
-- [How-to: Install The CLI](docs/how-to/install-the-cli.md)
+- [How-to: Set Up Global Config](docs/how-to/set-up-global-config.md)
 - [Reference: CLI](docs/reference/cli.md)
-- [Explanation: Mental Model](docs/explanation/mental-model.md)
+- [Reference: Project Manifest](docs/reference/project-manifest.md)
 
-## Documentation Structure
+## Standard Model
 
-This project uses the Divio documentation model:
+- Project scope:
+  - `AGENTS.md`
+  - `CLAUDE.md`
+  - `.agents/manifest.yaml`
+  - `.agents/state.yaml`
+  - `.agents/skills/<skill-name>`
+  - `.claude/skills/<skill-name>`
+- Home scope:
+  - `~/.agents/manifest.yaml`
+  - `~/.agents/state.yaml`
+  - `~/.agents/skills/<skill-name>`
+  - `~/.claude/skills/<skill-name>`
 
-- Tutorials: learning-oriented, end-to-end walkthroughs
-- How-to guides: task-oriented procedures
-- Reference: exact command and file documentation
-- Explanation: design decisions and concepts
-
-Browse the full set in [docs/index.md](docs/index.md).
+In both scopes, canonical skill links point to pinned worktree directories, not directly to mutable source clones.

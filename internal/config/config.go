@@ -14,29 +14,24 @@ import (
 var aliasPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
 type Config struct {
-	RepoRoot     string                  `yaml:"repo_root,omitempty"`
-	WorktreeRoot string                  `yaml:"worktree_root,omitempty"`
-	Agents       map[string]AgentConfig  `yaml:"agents,omitempty"`
-	Sources      map[string]SourceConfig `yaml:"sources,omitempty"`
+	RepoRoot              string                  `yaml:"repo_root,omitempty"`
+	WorktreeRoot          string                  `yaml:"worktree_root,omitempty"`
+	SharedSkillsDir       string                  `yaml:"shared_skills_dir,omitempty"`
+	SharedClaudeSkillsDir string                  `yaml:"shared_claude_skills_dir,omitempty"`
+	Sources               map[string]SourceConfig `yaml:"sources,omitempty"`
 }
 
 type SourceConfig struct {
 	URL string `yaml:"url"`
 }
 
-type AgentConfig struct {
-	SkillsDir string `yaml:"skills_dir"`
-}
-
 func DefaultConfig() Config {
 	return Config{
-		RepoRoot:     defaultRepoRootValue(),
-		WorktreeRoot: defaultWorktreeRootValue(),
-		Agents: map[string]AgentConfig{
-			"claude": {SkillsDir: "~/.claude/skills"},
-			"codex":  {SkillsDir: "~/.codex/skills"},
-		},
-		Sources: map[string]SourceConfig{},
+		RepoRoot:              defaultRepoRootValue(),
+		WorktreeRoot:          defaultWorktreeRootValue(),
+		SharedSkillsDir:       "~/.agents/skills",
+		SharedClaudeSkillsDir: "~/.claude/skills",
+		Sources:               map[string]SourceConfig{},
 	}
 }
 
@@ -108,6 +103,22 @@ func WorktreeRootPath(cfg Config) (string, error) {
 	return ExpandPath(root)
 }
 
+func SharedSkillsDirPath(cfg Config) (string, error) {
+	root := cfg.SharedSkillsDir
+	if strings.TrimSpace(root) == "" {
+		root = DefaultConfig().SharedSkillsDir
+	}
+	return ExpandPath(root)
+}
+
+func SharedClaudeSkillsDirPath(cfg Config) (string, error) {
+	root := cfg.SharedClaudeSkillsDir
+	if strings.TrimSpace(root) == "" {
+		root = DefaultConfig().SharedClaudeSkillsDir
+	}
+	return ExpandPath(root)
+}
+
 func ExpandPath(path string) (string, error) {
 	return ResolvePath("", path)
 }
@@ -152,8 +163,11 @@ func ensureDefaults(cfg *Config) {
 	if cfg.WorktreeRoot == "" {
 		cfg.WorktreeRoot = defaultWorktreeRootValue()
 	}
-	if cfg.Agents == nil {
-		cfg.Agents = DefaultConfig().Agents
+	if cfg.SharedSkillsDir == "" {
+		cfg.SharedSkillsDir = DefaultConfig().SharedSkillsDir
+	}
+	if cfg.SharedClaudeSkillsDir == "" {
+		cfg.SharedClaudeSkillsDir = DefaultConfig().SharedClaudeSkillsDir
 	}
 	if cfg.Sources == nil {
 		cfg.Sources = map[string]SourceConfig{}

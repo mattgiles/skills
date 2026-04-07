@@ -1,37 +1,19 @@
 # Use Local Agent Directories
 
-Project-level agent overrides are useful for testing because they keep symlinks inside the project instead of writing to real agent homes.
+Project scope now defaults to project-local canonical directories. You do not need per-agent overrides for the standard workflow.
 
-## Set A Project-Local Skills Directory
+## Project-Local Canonical Paths
 
-In `.skills.yaml`:
+`skills project init` and `skills project sync` use:
 
-```yaml
-agents:
-  codex:
-    skills_dir: ./agent-skills
-```
-
-Relative paths are resolved from the project directory.
-
-## Sync The Project
-
-```bash
-skills project sync
-```
-
-The symlink path will be:
-
-```text
-./agent-skills/<skill-name>
-```
+- `.agents/skills/<skill-name>` for canonical installed skills
+- `.claude/skills/<skill-name>` for Claude adapters
 
 ## Inspect The Links
 
 ```bash
-ls -l ./agent-skills
+ls -l .agents/skills
+ls -l .claude/skills
 ```
 
-This is the recommended setup for local testing and tutorials because it avoids changing `~/.codex/skills` or `~/.claude/skills`.
-
-For how project overrides interact with global config, see [Config Vs Project](../explanation/config-vs-project.md).
+This is the standard local workflow because it keeps project-specific installed skills inside the repo and separate from shared home installs.

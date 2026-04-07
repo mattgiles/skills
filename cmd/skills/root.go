@@ -19,7 +19,7 @@ import (
 func newRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "skills",
-		Short:         "Manage local agent skill sources",
+		Short:         "Manage standardized agent skills from Git sources",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -29,6 +29,7 @@ func newRootCommand() *cobra.Command {
 	cmd.AddCommand(newConfigCommand())
 	cmd.AddCommand(newSourceCommand())
 	cmd.AddCommand(newSkillCommand())
+	cmd.AddCommand(newHomeCommand())
 	cmd.AddCommand(newProjectCommand())
 
 	return cmd

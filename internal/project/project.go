@@ -19,37 +19,42 @@ import (
 )
 
 const (
-	ManifestFilename = ".skills.yaml"
-	StateFilename    = ".skills/state.yaml"
+	ManifestFilename      = ".agents/manifest.yaml"
+	StateFilename         = ".agents/state.yaml"
+	SkillsDirname         = ".agents/skills"
+	ClaudeSkillsDirname   = ".claude/skills"
+	AgentsFilename        = "AGENTS.md"
+	ClaudeFilename        = "CLAUDE.md"
+	homeManifestFilename  = "manifest.yaml"
+	homeStateFilename     = "state.yaml"
+	defaultAgentsContents = "# AGENTS.md\n"
+	defaultClaudeContents = "@AGENTS.md\n"
+	projectWorkspaceName  = "project"
+	sharedWorkspaceName   = "home"
 )
 
 type Manifest struct {
-	Sources map[string]ProjectSource        `yaml:"sources"`
-	Agents  map[string]ProjectAgentOverride `yaml:"agents,omitempty"`
-	Skills  []ProjectSkill                  `yaml:"skills"`
+	Sources map[string]ManifestSource `yaml:"sources"`
+	Skills  []ManifestSkill           `yaml:"skills"`
 }
 
-type ProjectSource struct {
+type ManifestSource struct {
 	URL string `yaml:"url,omitempty"`
 	Ref string `yaml:"ref"`
 }
 
-type ProjectAgentOverride struct {
-	SkillsDir string `yaml:"skills_dir"`
-}
-
-type ProjectSkill struct {
-	Source string   `yaml:"source"`
-	Name   string   `yaml:"name"`
-	Agents []string `yaml:"agents"`
+type ManifestSkill struct {
+	Source string `yaml:"source"`
+	Name   string `yaml:"name"`
 }
 
 type State struct {
-	Sources []ProjectSourceState `yaml:"sources,omitempty"`
-	Links   []ManagedLink        `yaml:"links,omitempty"`
+	Sources     []SourceState `yaml:"sources,omitempty"`
+	SkillLinks  []ManagedLink `yaml:"skill_links,omitempty"`
+	ClaudeLinks []ManagedLink `yaml:"claude_links,omitempty"`
 }
 
-type ProjectSourceState struct {
+type SourceState struct {
 	Source         string `yaml:"source"`
 	Ref            string `yaml:"ref"`
 	ResolvedCommit string `yaml:"resolved_commit"`
@@ -60,13 +65,14 @@ type ManagedLink struct {
 	Target string `yaml:"target"`
 	Source string `yaml:"source"`
 	Skill  string `yaml:"skill"`
-	Agent  string `yaml:"agent"`
 }
 
 type StatusReport struct {
-	Sources    []SourceReport
-	Links      []LinkReport
-	StaleLinks []ManagedLink
+	Sources          []SourceReport
+	SkillLinks       []LinkReport
+	ClaudeLinks      []LinkReport
+	StaleSkillLinks  []ManagedLink
+	StaleClaudeLinks []ManagedLink
 }
 
 type SourceReport struct {
@@ -83,7 +89,6 @@ type SourceReport struct {
 type LinkReport struct {
 	Source  string
 	Skill   string
-	Agent   string
 	Path    string
 	Target  string
 	Status  string
@@ -91,10 +96,12 @@ type LinkReport struct {
 }
 
 type SyncResult struct {
-	Sources []SourceReport
-	Links   []LinkReport
-	Pruned  []string
-	DryRun  bool
+	Sources           []SourceReport
+	SkillLinks        []LinkReport
+	ClaudeLinks       []LinkReport
+	PrunedSkillLinks  []string
+	PrunedClaudeLinks []string
+	DryRun            bool
 }
 
 type UpdateResult struct {
@@ -113,6 +120,17 @@ type UpdateOptions struct {
 	DryRun          bool
 }
 
+type workspace struct {
+	Name            string
+	RootDir         string
+	ManifestPath    string
+	StatePath       string
+	SkillsDir       string
+	ClaudeSkillsDir string
+	AgentsPath      string
+	ClaudePath      string
+}
+
 type desiredLink struct {
 	ManagedLink
 }
@@ -128,7 +146,7 @@ type resolvedSource struct {
 	Ref          string
 	RepoPath     string
 	WorktreeRoot string
-	ProjectID    string
+	WorkspaceID  string
 
 	StoredCommit  string
 	CurrentCommit string
@@ -138,15 +156,10 @@ type resolvedSource struct {
 	SkillsByName  map[string][]discovery.DiscoveredSkill
 }
 
-type resolvedAgent struct {
-	Name      string
-	SkillsDir string
-}
-
 func DefaultManifest() Manifest {
 	return Manifest{
-		Sources: map[string]ProjectSource{},
-		Skills:  []ProjectSkill{},
+		Sources: map[string]ManifestSource{},
+		Skills:  []ManifestSkill{},
 	}
 }
 
@@ -158,8 +171,80 @@ func StatePath(projectDir string) string {
 	return filepath.Join(projectDir, StateFilename)
 }
 
+func SkillsDir(projectDir string) string {
+	return filepath.Join(projectDir, SkillsDirname)
+}
+
+func ClaudeSkillsDir(projectDir string) string {
+	return filepath.Join(projectDir, ClaudeSkillsDirname)
+}
+
+func AgentsPath(projectDir string) string {
+	return filepath.Join(projectDir, AgentsFilename)
+}
+
+func ClaudePath(projectDir string) string {
+	return filepath.Join(projectDir, ClaudeFilename)
+}
+
+func HomeManifestPath(cfg config.Config) (string, error) {
+	ws, err := homeWorkspace(cfg)
+	if err != nil {
+		return "", err
+	}
+	return ws.ManifestPath, nil
+}
+
+func HomeStatePath(cfg config.Config) (string, error) {
+	ws, err := homeWorkspace(cfg)
+	if err != nil {
+		return "", err
+	}
+	return ws.StatePath, nil
+}
+
+func InitProject(projectDir string) error {
+	ws := projectWorkspace(projectDir)
+	if err := SaveManifestAt(ws.ManifestPath, DefaultManifest()); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(ws.SkillsDir, 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(ws.ClaudeSkillsDir, 0o755); err != nil {
+		return err
+	}
+	if err := ensureFile(ws.AgentsPath, defaultAgentsContents); err != nil {
+		return err
+	}
+	if err := ensureFile(ws.ClaudePath, defaultClaudeContents); err != nil {
+		return err
+	}
+	return nil
+}
+
+func InitHome(cfg config.Config) (string, error) {
+	ws, err := homeWorkspace(cfg)
+	if err != nil {
+		return "", err
+	}
+	if err := SaveManifestAt(ws.ManifestPath, DefaultManifest()); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(ws.SkillsDir, 0o755); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(ws.ClaudeSkillsDir, 0o755); err != nil {
+		return "", err
+	}
+	return ws.ManifestPath, nil
+}
+
 func LoadManifest(projectDir string) (Manifest, error) {
-	path := ManifestPath(projectDir)
+	return LoadManifestAt(ManifestPath(projectDir))
+}
+
+func LoadManifestAt(path string) (Manifest, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -182,12 +267,19 @@ func LoadManifest(projectDir string) (Manifest, error) {
 }
 
 func SaveManifest(projectDir string, manifest Manifest) error {
+	return SaveManifestAt(ManifestPath(projectDir), manifest)
+}
+
+func SaveManifestAt(path string, manifest Manifest) error {
 	ensureManifestDefaults(&manifest)
 	if err := ValidateManifest(manifest); err != nil {
 		return err
 	}
 
-	path := ManifestPath(projectDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+
 	data, err := yaml.Marshal(&manifest)
 	if err != nil {
 		return err
@@ -197,7 +289,10 @@ func SaveManifest(projectDir string, manifest Manifest) error {
 }
 
 func LoadState(projectDir string) (State, error) {
-	path := StatePath(projectDir)
+	return LoadStateAt(StatePath(projectDir))
+}
+
+func LoadStateAt(path string) (State, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return State{}, nil
@@ -214,7 +309,10 @@ func LoadState(projectDir string) (State, error) {
 }
 
 func SaveState(projectDir string, state State) error {
-	path := StatePath(projectDir)
+	return SaveStateAt(StatePath(projectDir), state)
+}
+
+func SaveStateAt(path string, state State) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -238,15 +336,6 @@ func ValidateManifest(manifest Manifest) error {
 		}
 	}
 
-	for agent, override := range manifest.Agents {
-		if err := config.ValidateAlias(agent); err != nil {
-			return err
-		}
-		if strings.TrimSpace(override.SkillsDir) == "" {
-			return fmt.Errorf("agent override %q is missing skills_dir", agent)
-		}
-	}
-
 	seenSkills := map[string]struct{}{}
 	for _, skill := range manifest.Skills {
 		if strings.TrimSpace(skill.Source) == "" {
@@ -258,26 +347,12 @@ func ValidateManifest(manifest Manifest) error {
 		if _, ok := manifest.Sources[skill.Source]; !ok {
 			return fmt.Errorf("skill %q references unknown source %q", skill.Name, skill.Source)
 		}
-		if len(skill.Agents) == 0 {
-			return fmt.Errorf("skill %q in source %q has no agents", skill.Name, skill.Source)
-		}
 
 		key := skill.Source + "\x00" + skill.Name
 		if _, ok := seenSkills[key]; ok {
 			return fmt.Errorf("duplicate skill declaration for %s/%s", skill.Source, skill.Name)
 		}
 		seenSkills[key] = struct{}{}
-
-		seenAgents := map[string]struct{}{}
-		for _, agent := range skill.Agents {
-			if err := config.ValidateAlias(agent); err != nil {
-				return err
-			}
-			if _, ok := seenAgents[agent]; ok {
-				return fmt.Errorf("skill %q in source %q repeats agent %q", skill.Name, skill.Source, agent)
-			}
-			seenAgents[agent] = struct{}{}
-		}
 	}
 
 	return nil
@@ -300,47 +375,231 @@ func ProjectID(projectDir string) (string, error) {
 }
 
 func Status(ctx context.Context, projectDir string, cfg config.Config) (StatusReport, error) {
-	manifest, state, resolvedSources, agents, err := loadProjectInputs(projectDir, cfg)
+	return statusWorkspace(ctx, projectWorkspace(projectDir), cfg)
+}
+
+func HomeStatus(ctx context.Context, cfg config.Config) (StatusReport, error) {
+	ws, err := homeWorkspace(cfg)
+	if err != nil {
+		return StatusReport{}, err
+	}
+	return statusWorkspace(ctx, ws, cfg)
+}
+
+func Sync(ctx context.Context, projectDir string, cfg config.Config, options SyncOptions) (SyncResult, error) {
+	return syncWorkspace(ctx, projectWorkspace(projectDir), cfg, options)
+}
+
+func HomeSync(ctx context.Context, cfg config.Config, options SyncOptions) (SyncResult, error) {
+	ws, err := homeWorkspace(cfg)
+	if err != nil {
+		return SyncResult{}, err
+	}
+	return syncWorkspace(ctx, ws, cfg, options)
+}
+
+func Update(ctx context.Context, projectDir string, cfg config.Config, options UpdateOptions) (UpdateResult, error) {
+	return updateWorkspace(ctx, projectWorkspace(projectDir), cfg, options)
+}
+
+func HomeUpdate(ctx context.Context, cfg config.Config, options UpdateOptions) (UpdateResult, error) {
+	ws, err := homeWorkspace(cfg)
+	if err != nil {
+		return UpdateResult{}, err
+	}
+	return updateWorkspace(ctx, ws, cfg, options)
+}
+
+func projectWorkspace(projectDir string) workspace {
+	return workspace{
+		Name:            projectWorkspaceName,
+		RootDir:         projectDir,
+		ManifestPath:    ManifestPath(projectDir),
+		StatePath:       StatePath(projectDir),
+		SkillsDir:       SkillsDir(projectDir),
+		ClaudeSkillsDir: ClaudeSkillsDir(projectDir),
+		AgentsPath:      AgentsPath(projectDir),
+		ClaudePath:      ClaudePath(projectDir),
+	}
+}
+
+func homeWorkspace(cfg config.Config) (workspace, error) {
+	skillsDir, err := config.SharedSkillsDirPath(cfg)
+	if err != nil {
+		return workspace{}, err
+	}
+	claudeDir, err := config.SharedClaudeSkillsDirPath(cfg)
+	if err != nil {
+		return workspace{}, err
+	}
+
+	rootDir := filepath.Dir(skillsDir)
+	return workspace{
+		Name:            sharedWorkspaceName,
+		RootDir:         rootDir,
+		ManifestPath:    filepath.Join(rootDir, homeManifestFilename),
+		StatePath:       filepath.Join(rootDir, homeStateFilename),
+		SkillsDir:       skillsDir,
+		ClaudeSkillsDir: claudeDir,
+	}, nil
+}
+
+func statusWorkspace(ctx context.Context, ws workspace, cfg config.Config) (StatusReport, error) {
+	manifest, state, resolvedSources, err := loadWorkspaceInputs(ws, cfg)
 	if err != nil {
 		return StatusReport{}, err
 	}
 
 	stateSources := sourceStateMap(state)
-	stateLinks := managedLinkMap(state)
+	skillStateLinks := managedLinkMap(state.SkillLinks)
+	claudeStateLinks := managedLinkMap(state.ClaudeLinks)
 
 	sourceReports, err := resolveSourcesForStatus(ctx, resolvedSources, stateSources)
 	if err != nil {
 		return StatusReport{}, err
 	}
 
-	desiredLinks, linkReports := buildLinkReports(resolvedSources, agents, manifest, stateLinks, false)
-	desiredByPath := desiredLinkMap(desiredLinks)
-	stale := staleLinks(state, desiredByPath)
+	desiredSkillLinks, skillReports := buildSkillLinkReports(resolvedSources, manifest, ws.SkillsDir, skillStateLinks)
+	desiredSkillsByPath := desiredLinkMap(desiredSkillLinks)
+	staleSkillLinks := staleLinks(state.SkillLinks, desiredSkillsByPath)
+
+	desiredClaudeLinks, claudeReports := buildClaudeLinkReports(desiredSkillLinks, ws.ClaudeSkillsDir, claudeStateLinks)
+	desiredClaudeByPath := desiredLinkMap(desiredClaudeLinks)
+	staleClaudeLinks := staleLinks(state.ClaudeLinks, desiredClaudeByPath)
 
 	sortSourceReports(sourceReports)
-	sortLinkReports(linkReports)
-	sort.Slice(stale, func(i, j int) bool {
-		return stale[i].Path < stale[j].Path
-	})
+	sortLinkReports(skillReports)
+	sortLinkReports(claudeReports)
+	sortManagedLinks(staleSkillLinks)
+	sortManagedLinks(staleClaudeLinks)
 
 	return StatusReport{
-		Sources:    sourceReports,
-		Links:      linkReports,
-		StaleLinks: stale,
+		Sources:          sourceReports,
+		SkillLinks:       skillReports,
+		ClaudeLinks:      claudeReports,
+		StaleSkillLinks:  staleSkillLinks,
+		StaleClaudeLinks: staleClaudeLinks,
 	}, nil
 }
 
-func Sync(ctx context.Context, projectDir string, cfg config.Config, options SyncOptions) (SyncResult, error) {
-	manifest, state, resolvedSources, agents, err := loadProjectInputs(projectDir, cfg)
+func syncWorkspace(ctx context.Context, ws workspace, cfg config.Config, options SyncOptions) (SyncResult, error) {
+	manifest, state, resolvedSources, err := loadWorkspaceInputs(ws, cfg)
 	if err != nil {
 		return SyncResult{}, err
 	}
 
-	return syncWithState(ctx, projectDir, manifest, state, resolvedSources, agents, options)
+	stateSources := sourceStateMap(state)
+	skillStateLinks := managedLinkMap(state.SkillLinks)
+	claudeStateLinks := managedLinkMap(state.ClaudeLinks)
+
+	sourceReports, sourceStates, err := resolveSourcesForSync(ctx, resolvedSources, stateSources)
+	if err != nil {
+		return SyncResult{}, err
+	}
+
+	desiredSkillLinks, skillReports := buildSkillLinkReports(resolvedSources, manifest, ws.SkillsDir, skillStateLinks)
+	if err := validateDesiredLinks(desiredSkillLinks); err != nil {
+		return SyncResult{}, err
+	}
+	if err := fatalSkillLinkReports(skillReports); err != nil {
+		return SyncResult{}, err
+	}
+
+	skillActions, err := planLinkActions(desiredSkillLinks, skillStateLinks)
+	if err != nil {
+		return SyncResult{}, err
+	}
+	updateLinkReportsForActions(skillReports, skillActions, options.DryRun)
+
+	desiredClaudeLinks, claudeReports := buildClaudeLinkReports(desiredSkillLinks, ws.ClaudeSkillsDir, claudeStateLinks)
+	if err := validateDesiredLinks(desiredClaudeLinks); err != nil {
+		return SyncResult{}, err
+	}
+	if err := fatalAdapterLinkReports(claudeReports); err != nil {
+		return SyncResult{}, err
+	}
+
+	claudeActions, err := planLinkActions(desiredClaudeLinks, claudeStateLinks)
+	if err != nil {
+		return SyncResult{}, err
+	}
+	updateLinkReportsForActions(claudeReports, claudeActions, options.DryRun)
+
+	staleSkillLinks := staleLinks(state.SkillLinks, desiredLinkMap(desiredSkillLinks))
+	prunedSkillLinks := managedLinkPaths(staleSkillLinks)
+
+	staleClaudeLinks := staleLinks(state.ClaudeLinks, desiredLinkMap(desiredClaudeLinks))
+	prunedClaudeLinks := managedLinkPaths(staleClaudeLinks)
+
+	if options.DryRun {
+		result := SyncResult{
+			Sources:           sourceReports,
+			SkillLinks:        skillReports,
+			ClaudeLinks:       claudeReports,
+			PrunedSkillLinks:  prunedSkillLinks,
+			PrunedClaudeLinks: prunedClaudeLinks,
+			DryRun:            true,
+		}
+		sortSourceReports(result.Sources)
+		sortLinkReports(result.SkillLinks)
+		sortLinkReports(result.ClaudeLinks)
+		return result, nil
+	}
+
+	for _, src := range sortedResolvedSources(resolvedSources) {
+		if strings.TrimSpace(src.DesiredCommit) == "" {
+			continue
+		}
+		if _, err := source.EnsureWorktree(ctx, source.Source{
+			Alias:    src.Alias,
+			URL:      src.URL,
+			RepoPath: src.RepoPath,
+		}, src.WorktreePath, src.DesiredCommit); err != nil {
+			return SyncResult{}, err
+		}
+	}
+
+	if err := applyLinkActions(skillActions); err != nil {
+		return SyncResult{}, err
+	}
+	if err := applyLinkActions(claudeActions); err != nil {
+		return SyncResult{}, err
+	}
+	if err := removeManagedLinks(staleClaudeLinks); err != nil {
+		return SyncResult{}, err
+	}
+	if err := removeManagedLinks(staleSkillLinks); err != nil {
+		return SyncResult{}, err
+	}
+
+	nextState := State{
+		Sources:     sourceStates,
+		SkillLinks:  toManagedLinks(desiredSkillLinks),
+		ClaudeLinks: toManagedLinks(desiredClaudeLinks),
+	}
+	if err := SaveStateAt(ws.StatePath, nextState); err != nil {
+		return SyncResult{}, err
+	}
+
+	for i := range sourceReports {
+		sourceReports[i].Status = syncSourceStatus(sourceReports[i].Status)
+	}
+
+	result := SyncResult{
+		Sources:           sourceReports,
+		SkillLinks:        skillReports,
+		ClaudeLinks:       claudeReports,
+		PrunedSkillLinks:  prunedSkillLinks,
+		PrunedClaudeLinks: prunedClaudeLinks,
+	}
+	sortSourceReports(result.Sources)
+	sortLinkReports(result.SkillLinks)
+	sortLinkReports(result.ClaudeLinks)
+	return result, nil
 }
 
-func Update(ctx context.Context, projectDir string, cfg config.Config, options UpdateOptions) (UpdateResult, error) {
-	manifest, state, resolvedSources, agents, err := loadProjectInputs(projectDir, cfg)
+func updateWorkspace(ctx context.Context, ws workspace, cfg config.Config, options UpdateOptions) (UpdateResult, error) {
+	manifest, state, resolvedSources, err := loadWorkspaceInputs(ws, cfg)
 	if err != nil {
 		return UpdateResult{}, err
 	}
@@ -363,7 +622,7 @@ func Update(ctx context.Context, projectDir string, cfg config.Config, options U
 
 	if options.Sync {
 		nextState := mergeSourceStates(state, nextSourceStates, nil)
-		syncResult, err := syncWithState(ctx, projectDir, manifest, nextState, resolvedSources, agents, SyncOptions{DryRun: options.DryRun})
+		syncResult, err := syncWorkspaceWithState(ctx, ws, manifest, nextState, resolvedSources, options.DryRun)
 		if err != nil {
 			return UpdateResult{}, err
 		}
@@ -373,7 +632,7 @@ func Update(ctx context.Context, projectDir string, cfg config.Config, options U
 
 	if !options.DryRun {
 		nextState := mergeSourceStates(state, nextSourceStates, nil)
-		if err := SaveState(projectDir, nextState); err != nil {
+		if err := SaveStateAt(ws.StatePath, nextState); err != nil {
 			return UpdateResult{}, err
 		}
 	}
@@ -382,83 +641,62 @@ func Update(ctx context.Context, projectDir string, cfg config.Config, options U
 	return result, nil
 }
 
-func loadProjectInputs(projectDir string, cfg config.Config) (Manifest, State, map[string]*resolvedSource, map[string]resolvedAgent, error) {
-	manifest, err := LoadManifest(projectDir)
-	if err != nil {
-		return Manifest{}, State{}, nil, nil, err
-	}
-
-	state, err := LoadState(projectDir)
-	if err != nil {
-		return Manifest{}, State{}, nil, nil, err
-	}
-
-	worktreeRoot, err := config.WorktreeRootPath(cfg)
-	if err != nil {
-		return Manifest{}, State{}, nil, nil, err
-	}
-
-	resolvedSources, agents, err := resolveInputs(projectDir, cfg, manifest, worktreeRoot)
-	if err != nil {
-		return Manifest{}, State{}, nil, nil, err
-	}
-
-	return manifest, state, resolvedSources, agents, nil
-}
-
-func syncWithState(ctx context.Context, projectDir string, manifest Manifest, state State, resolvedSources map[string]*resolvedSource, agents map[string]resolvedAgent, options SyncOptions) (SyncResult, error) {
+func syncWorkspaceWithState(ctx context.Context, ws workspace, manifest Manifest, state State, resolvedSources map[string]*resolvedSource, dryRun bool) (SyncResult, error) {
+	skillStateLinks := managedLinkMap(state.SkillLinks)
+	claudeStateLinks := managedLinkMap(state.ClaudeLinks)
 	stateSources := sourceStateMap(state)
-	stateLinks := managedLinkMap(state)
 
 	sourceReports, sourceStates, err := resolveSourcesForSync(ctx, resolvedSources, stateSources)
 	if err != nil {
 		return SyncResult{}, err
 	}
 
-	desiredLinks, linkReports := buildLinkReports(resolvedSources, agents, manifest, stateLinks, true)
-	if err := validateDesiredLinks(desiredLinks); err != nil {
+	desiredSkillLinks, skillReports := buildSkillLinkReports(resolvedSources, manifest, ws.SkillsDir, skillStateLinks)
+	if err := validateDesiredLinks(desiredSkillLinks); err != nil {
 		return SyncResult{}, err
 	}
-	if err := fatalLinkReports(linkReports); err != nil {
+	if err := fatalSkillLinkReports(skillReports); err != nil {
 		return SyncResult{}, err
 	}
 
-	actions, err := planLinkActions(desiredLinks, stateLinks)
+	skillActions, err := planLinkActions(desiredSkillLinks, skillStateLinks)
 	if err != nil {
 		return SyncResult{}, err
 	}
+	updateLinkReportsForActions(skillReports, skillActions, dryRun)
 
-	actionByPath := map[string]string{}
-	for _, action := range actions {
-		actionByPath[action.Link.Path] = action.Status
+	desiredClaudeLinks, claudeReports := buildClaudeLinkReports(desiredSkillLinks, ws.ClaudeSkillsDir, claudeStateLinks)
+	if err := validateDesiredLinks(desiredClaudeLinks); err != nil {
+		return SyncResult{}, err
 	}
-	for i := range linkReports {
-		if planned, ok := actionByPath[linkReports[i].Path]; ok {
-			if options.DryRun {
-				linkReports[i].Status = dryRunLinkStatus(planned)
-			} else {
-				linkReports[i].Status = planned
-			}
-		}
+	if err := fatalAdapterLinkReports(claudeReports); err != nil {
+		return SyncResult{}, err
 	}
 
-	desiredByPath := desiredLinkMap(desiredLinks)
-	stale := staleLinks(state, desiredByPath)
-	prunedPaths := make([]string, 0, len(stale))
-	for _, link := range stale {
-		prunedPaths = append(prunedPaths, link.Path)
+	claudeActions, err := planLinkActions(desiredClaudeLinks, claudeStateLinks)
+	if err != nil {
+		return SyncResult{}, err
 	}
-	sort.Strings(prunedPaths)
+	updateLinkReportsForActions(claudeReports, claudeActions, dryRun)
 
-	if options.DryRun {
+	staleSkillLinks := staleLinks(state.SkillLinks, desiredLinkMap(desiredSkillLinks))
+	prunedSkillLinks := managedLinkPaths(staleSkillLinks)
+
+	staleClaudeLinks := staleLinks(state.ClaudeLinks, desiredLinkMap(desiredClaudeLinks))
+	prunedClaudeLinks := managedLinkPaths(staleClaudeLinks)
+
+	if dryRun {
 		result := SyncResult{
-			Sources: sourceReports,
-			Links:   linkReports,
-			Pruned:  prunedPaths,
-			DryRun:  true,
+			Sources:           sourceReports,
+			SkillLinks:        skillReports,
+			ClaudeLinks:       claudeReports,
+			PrunedSkillLinks:  prunedSkillLinks,
+			PrunedClaudeLinks: prunedClaudeLinks,
+			DryRun:            true,
 		}
 		sortSourceReports(result.Sources)
-		sortLinkReports(result.Links)
+		sortLinkReports(result.SkillLinks)
+		sortLinkReports(result.ClaudeLinks)
 		return result, nil
 	}
 
@@ -475,38 +713,25 @@ func syncWithState(ctx context.Context, projectDir string, manifest Manifest, st
 		}
 	}
 
-	for _, action := range actions {
-		switch action.Status {
-		case "linked":
-			continue
-		case "created":
-			if err := createSymlink(action.Link); err != nil {
-				return SyncResult{}, err
-			}
-		case "updated":
-			if err := replaceSymlink(action.Link); err != nil {
-				return SyncResult{}, err
-			}
-		default:
-			return SyncResult{}, fmt.Errorf("unexpected link action %q", action.Status)
-		}
+	if err := applyLinkActions(skillActions); err != nil {
+		return SyncResult{}, err
 	}
-
-	for _, link := range stale {
-		if err := removeManagedLink(link); err != nil {
-			return SyncResult{}, err
-		}
+	if err := applyLinkActions(claudeActions); err != nil {
+		return SyncResult{}, err
+	}
+	if err := removeManagedLinks(staleClaudeLinks); err != nil {
+		return SyncResult{}, err
+	}
+	if err := removeManagedLinks(staleSkillLinks); err != nil {
+		return SyncResult{}, err
 	}
 
 	nextState := State{
-		Sources: sourceStates,
-		Links:   make([]ManagedLink, 0, len(desiredLinks)),
+		Sources:     sourceStates,
+		SkillLinks:  toManagedLinks(desiredSkillLinks),
+		ClaudeLinks: toManagedLinks(desiredClaudeLinks),
 	}
-	for _, link := range desiredLinks {
-		nextState.Links = append(nextState.Links, link.ManagedLink)
-	}
-
-	if err := SaveState(projectDir, nextState); err != nil {
+	if err := SaveStateAt(ws.StatePath, nextState); err != nil {
 		return SyncResult{}, err
 	}
 
@@ -515,37 +740,64 @@ func syncWithState(ctx context.Context, projectDir string, manifest Manifest, st
 	}
 
 	result := SyncResult{
-		Sources: sourceReports,
-		Links:   linkReports,
-		Pruned:  prunedPaths,
+		Sources:           sourceReports,
+		SkillLinks:        skillReports,
+		ClaudeLinks:       claudeReports,
+		PrunedSkillLinks:  prunedSkillLinks,
+		PrunedClaudeLinks: prunedClaudeLinks,
 	}
 	sortSourceReports(result.Sources)
-	sortLinkReports(result.Links)
+	sortLinkReports(result.SkillLinks)
+	sortLinkReports(result.ClaudeLinks)
 	return result, nil
 }
 
-func resolveInputs(projectDir string, cfg config.Config, manifest Manifest, worktreeRoot string) (map[string]*resolvedSource, map[string]resolvedAgent, error) {
-	repoRoot, err := config.RepoRootPath(cfg)
+func loadWorkspaceInputs(ws workspace, cfg config.Config) (Manifest, State, map[string]*resolvedSource, error) {
+	manifest, err := LoadManifestAt(ws.ManifestPath)
 	if err != nil {
-		return nil, nil, err
+		return Manifest{}, State{}, nil, err
 	}
 
-	projectID, err := ProjectID(projectDir)
+	state, err := LoadStateAt(ws.StatePath)
 	if err != nil {
-		return nil, nil, err
+		return Manifest{}, State{}, nil, err
+	}
+
+	worktreeRoot, err := config.WorktreeRootPath(cfg)
+	if err != nil {
+		return Manifest{}, State{}, nil, err
+	}
+
+	resolvedSources, err := resolveInputs(ws, cfg, manifest, worktreeRoot)
+	if err != nil {
+		return Manifest{}, State{}, nil, err
+	}
+
+	return manifest, state, resolvedSources, nil
+}
+
+func resolveInputs(ws workspace, cfg config.Config, manifest Manifest, worktreeRoot string) (map[string]*resolvedSource, error) {
+	repoRoot, err := config.RepoRootPath(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	workspaceID, err := ProjectID(ws.RootDir)
+	if err != nil {
+		return nil, err
 	}
 
 	resolvedSources := map[string]*resolvedSource{}
-	for alias, projectSource := range manifest.Sources {
+	for alias, manifestSource := range manifest.Sources {
 		globalSource, hasGlobal := cfg.Sources[alias]
 		switch {
-		case hasGlobal && strings.TrimSpace(projectSource.URL) != "" && projectSource.URL != globalSource.URL:
-			return nil, nil, fmt.Errorf("source %q has conflicting URLs between global config and project manifest", alias)
-		case strings.TrimSpace(projectSource.URL) == "" && !hasGlobal:
-			return nil, nil, fmt.Errorf("source %q has no URL in project manifest or global config", alias)
+		case hasGlobal && strings.TrimSpace(manifestSource.URL) != "" && manifestSource.URL != globalSource.URL:
+			return nil, fmt.Errorf("source %q has conflicting URLs between global config and manifest", alias)
+		case strings.TrimSpace(manifestSource.URL) == "" && !hasGlobal:
+			return nil, fmt.Errorf("source %q has no URL in manifest or global config", alias)
 		}
 
-		url := projectSource.URL
+		url := manifestSource.URL
 		if strings.TrimSpace(url) == "" {
 			url = globalSource.URL
 		}
@@ -553,41 +805,17 @@ func resolveInputs(projectDir string, cfg config.Config, manifest Manifest, work
 		resolvedSources[alias] = &resolvedSource{
 			Alias:        alias,
 			URL:          url,
-			Ref:          projectSource.Ref,
+			Ref:          manifestSource.Ref,
 			RepoPath:     source.RepoPath(repoRoot, alias),
 			WorktreeRoot: worktreeRoot,
-			ProjectID:    projectID,
+			WorkspaceID:  workspaceID,
 		}
 	}
 
-	agents := map[string]resolvedAgent{}
-	for name, cfgAgent := range cfg.Agents {
-		path, err := config.ResolvePath("", cfgAgent.SkillsDir)
-		if err != nil {
-			return nil, nil, err
-		}
-		agents[name] = resolvedAgent{Name: name, SkillsDir: path}
-	}
-	for name, override := range manifest.Agents {
-		path, err := config.ResolvePath(projectDir, override.SkillsDir)
-		if err != nil {
-			return nil, nil, err
-		}
-		agents[name] = resolvedAgent{Name: name, SkillsDir: path}
-	}
-
-	for _, skill := range manifest.Skills {
-		for _, agent := range skill.Agents {
-			if _, ok := agents[agent]; !ok {
-				return nil, nil, fmt.Errorf("agent %q is not configured globally or in the project manifest", agent)
-			}
-		}
-	}
-
-	return resolvedSources, agents, nil
+	return resolvedSources, nil
 }
 
-func resolveSourcesForStatus(ctx context.Context, resolvedSources map[string]*resolvedSource, stateSources map[string]ProjectSourceState) ([]SourceReport, error) {
+func resolveSourcesForStatus(ctx context.Context, resolvedSources map[string]*resolvedSource, stateSources map[string]SourceState) ([]SourceReport, error) {
 	reports := make([]SourceReport, 0, len(resolvedSources))
 
 	for _, src := range sortedResolvedSources(resolvedSources) {
@@ -624,7 +852,7 @@ func resolveSourcesForStatus(ctx context.Context, resolvedSources map[string]*re
 				switch {
 				case !hasPrev || strings.TrimSpace(prev.ResolvedCommit) == "":
 					report.Status = "not-synced"
-					report.Message = "run project sync or project update"
+					report.Message = "run sync or update"
 				case prev.Ref != src.Ref:
 					report.Status = "update-available"
 					report.Message = "state recorded for ref " + prev.Ref
@@ -639,7 +867,7 @@ func resolveSourcesForStatus(ctx context.Context, resolvedSources map[string]*re
 
 		setDesiredCommitForStatus(src, hasPrev, prev)
 		if status.Exists && status.IsGitRepo && strings.TrimSpace(src.DesiredCommit) != "" {
-			src.WorktreePath = source.WorktreePath(src.WorktreeRoot, src.ProjectID, src.Alias, src.DesiredCommit)
+			src.WorktreePath = source.WorktreePath(src.WorktreeRoot, src.WorkspaceID, src.Alias, src.DesiredCommit)
 			report.WorktreePath = src.WorktreePath
 			skillsByName, inspectErr := loadSkillsForCommit(ctx, src)
 			if inspectErr != nil {
@@ -657,9 +885,9 @@ func resolveSourcesForStatus(ctx context.Context, resolvedSources map[string]*re
 	return reports, nil
 }
 
-func resolveSourcesForSync(ctx context.Context, resolvedSources map[string]*resolvedSource, stateSources map[string]ProjectSourceState) ([]SourceReport, []ProjectSourceState, error) {
+func resolveSourcesForSync(ctx context.Context, resolvedSources map[string]*resolvedSource, stateSources map[string]SourceState) ([]SourceReport, []SourceState, error) {
 	reports := make([]SourceReport, 0, len(resolvedSources))
-	nextStates := make([]ProjectSourceState, 0, len(resolvedSources))
+	nextStates := make([]SourceState, 0, len(resolvedSources))
 
 	for _, src := range sortedResolvedSources(resolvedSources) {
 		prev, hasPrev := stateSources[src.Alias]
@@ -713,7 +941,7 @@ func resolveSourcesForSync(ctx context.Context, resolvedSources map[string]*reso
 		}
 
 		if status.Exists && status.IsGitRepo && strings.TrimSpace(src.DesiredCommit) != "" {
-			src.WorktreePath = source.WorktreePath(src.WorktreeRoot, src.ProjectID, src.Alias, src.DesiredCommit)
+			src.WorktreePath = source.WorktreePath(src.WorktreeRoot, src.WorkspaceID, src.Alias, src.DesiredCommit)
 			report.WorktreePath = src.WorktreePath
 			skillsByName, inspectErr := loadSkillsForCommit(ctx, src)
 			if inspectErr != nil {
@@ -723,7 +951,7 @@ func resolveSourcesForSync(ctx context.Context, resolvedSources map[string]*reso
 			} else {
 				src.SkillsByName = skillsByName
 			}
-			nextStates = append(nextStates, ProjectSourceState{
+			nextStates = append(nextStates, SourceState{
 				Source:         src.Alias,
 				Ref:            src.Ref,
 				ResolvedCommit: src.DesiredCommit,
@@ -740,9 +968,9 @@ func resolveSourcesForSync(ctx context.Context, resolvedSources map[string]*reso
 	return reports, nextStates, nil
 }
 
-func resolveSourcesForUpdate(ctx context.Context, resolvedSources map[string]*resolvedSource, stateSources map[string]ProjectSourceState) ([]SourceReport, []ProjectSourceState, error) {
+func resolveSourcesForUpdate(ctx context.Context, resolvedSources map[string]*resolvedSource, stateSources map[string]SourceState) ([]SourceReport, []SourceState, error) {
 	reports := make([]SourceReport, 0, len(resolvedSources))
-	nextStates := make([]ProjectSourceState, 0, len(resolvedSources))
+	nextStates := make([]SourceState, 0, len(resolvedSources))
 
 	for _, src := range sortedResolvedSources(resolvedSources) {
 		prev, hasPrev := stateSources[src.Alias]
@@ -778,7 +1006,7 @@ func resolveSourcesForUpdate(ctx context.Context, resolvedSources map[string]*re
 			} else {
 				src.CurrentCommit = commit
 				report.Commit = shortCommit(commit)
-				report.WorktreePath = source.WorktreePath(src.WorktreeRoot, src.ProjectID, src.Alias, commit)
+				report.WorktreePath = source.WorktreePath(src.WorktreeRoot, src.WorkspaceID, src.Alias, commit)
 				switch {
 				case !hasPrev || strings.TrimSpace(prev.ResolvedCommit) == "":
 					report.Status = "resolved"
@@ -791,7 +1019,7 @@ func resolveSourcesForUpdate(ctx context.Context, resolvedSources map[string]*re
 					report.Status = "up-to-date"
 				}
 
-				nextStates = append(nextStates, ProjectSourceState{
+				nextStates = append(nextStates, SourceState{
 					Source:         src.Alias,
 					Ref:            src.Ref,
 					ResolvedCommit: commit,
@@ -850,7 +1078,7 @@ func ensureSourceReady(ctx context.Context, src *resolvedSource, cloneMissing bo
 	return status, nil
 }
 
-func setDesiredCommitForStatus(src *resolvedSource, hasPrev bool, prev ProjectSourceState) {
+func setDesiredCommitForStatus(src *resolvedSource, hasPrev bool, prev SourceState) {
 	switch {
 	case hasPrev && prev.Ref == src.Ref && strings.TrimSpace(prev.ResolvedCommit) != "":
 		src.DesiredCommit = prev.ResolvedCommit
@@ -882,60 +1110,78 @@ func loadSkillsForCommit(ctx context.Context, src *resolvedSource) (map[string][
 	return skillsByName, nil
 }
 
-func buildLinkReports(resolvedSources map[string]*resolvedSource, agents map[string]resolvedAgent, manifest Manifest, stateLinks map[string]ManagedLink, forSync bool) ([]desiredLink, []LinkReport) {
-	desired := make([]desiredLink, 0)
-	reports := make([]LinkReport, 0)
+func buildSkillLinkReports(resolvedSources map[string]*resolvedSource, manifest Manifest, skillsDir string, stateLinks map[string]ManagedLink) ([]desiredLink, []LinkReport) {
+	desired := make([]desiredLink, 0, len(manifest.Skills))
+	reports := make([]LinkReport, 0, len(manifest.Skills))
 
 	for _, skill := range manifest.Skills {
 		src := resolvedSources[skill.Source]
-		for _, agentName := range skill.Agents {
-			agent := agents[agentName]
-			report := LinkReport{
-				Source: skill.Source,
-				Skill:  skill.Name,
-				Agent:  agentName,
-				Path:   filepath.Join(agent.SkillsDir, skill.Name),
-			}
-
-			switch {
-			case src == nil:
-				report.Status = "unknown-source"
-				report.Message = "source is not declared"
-			case strings.TrimSpace(src.DesiredCommit) == "":
-				report.Status = "source-not-ready"
-			case strings.TrimSpace(src.InspectError) != "":
-				report.Status = "inspect-failed"
-				report.Message = src.InspectError
-			default:
-				matches := src.SkillsByName[skill.Name]
-				switch {
-				case len(matches) == 0:
-					report.Status = "missing-skill"
-				case len(matches) > 1:
-					report.Status = "ambiguous-skill"
-					report.Message = "multiple skills share this directory name"
-				default:
-					target := filepath.Join(src.WorktreePath, matches[0].RelativePath)
-					report.Target = target
-					report.Status = currentLinkStatus(report.Path, target, stateLinks)
-					desired = append(desired, desiredLink{
-						ManagedLink: ManagedLink{
-							Path:   report.Path,
-							Target: target,
-							Source: skill.Source,
-							Skill:  skill.Name,
-							Agent:  agentName,
-						},
-					})
-				}
-			}
-
-			reports = append(reports, report)
+		report := LinkReport{
+			Source: skill.Source,
+			Skill:  skill.Name,
+			Path:   filepath.Join(skillsDir, skill.Name),
 		}
+
+		switch {
+		case src == nil:
+			report.Status = "unknown-source"
+			report.Message = "source is not declared"
+		case strings.TrimSpace(src.DesiredCommit) == "":
+			report.Status = "source-not-ready"
+		case strings.TrimSpace(src.InspectError) != "":
+			report.Status = "inspect-failed"
+			report.Message = src.InspectError
+		default:
+			matches := src.SkillsByName[skill.Name]
+			switch {
+			case len(matches) == 0:
+				report.Status = "missing-skill"
+			case len(matches) > 1:
+				report.Status = "ambiguous-skill"
+				report.Message = "multiple skills share this directory name"
+			default:
+				target := filepath.Join(src.WorktreePath, matches[0].RelativePath)
+				report.Target = target
+				report.Status = currentLinkStatus(report.Path, target, stateLinks)
+				desired = append(desired, desiredLink{
+					ManagedLink: ManagedLink{
+						Path:   report.Path,
+						Target: target,
+						Source: skill.Source,
+						Skill:  skill.Name,
+					},
+				})
+			}
+		}
+
+		reports = append(reports, report)
 	}
 
-	if forSync {
-		_ = fatalLinkReports(reports)
+	sortLinkReports(reports)
+	return desired, reports
+}
+
+func buildClaudeLinkReports(skillLinks []desiredLink, claudeSkillsDir string, stateLinks map[string]ManagedLink) ([]desiredLink, []LinkReport) {
+	desired := make([]desiredLink, 0, len(skillLinks))
+	reports := make([]LinkReport, 0, len(skillLinks))
+
+	for _, skillLink := range skillLinks {
+		report := LinkReport{
+			Source: skillLink.Source,
+			Skill:  skillLink.Skill,
+			Path:   filepath.Join(claudeSkillsDir, skillLink.Skill),
+			Target: skillLink.Path,
+		}
+		report.Status = currentLinkStatus(report.Path, report.Target, stateLinks)
+		desired = append(desired, desiredLink{
+			ManagedLink: ManagedLink{
+				Path:   report.Path,
+				Target: report.Target,
+				Source: skillLink.Source,
+				Skill:  skillLink.Skill,
+			},
+		})
+		reports = append(reports, report)
 	}
 
 	sortLinkReports(reports)
@@ -993,6 +1239,42 @@ func plannedLinkStatus(link desiredLink, stateLinks map[string]ManagedLink) (str
 	return "updated", nil
 }
 
+func applyLinkActions(actions []linkAction) error {
+	for _, action := range actions {
+		switch action.Status {
+		case "linked":
+			continue
+		case "created":
+			if err := createSymlink(action.Link); err != nil {
+				return err
+			}
+		case "updated":
+			if err := replaceSymlink(action.Link); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unexpected link action %q", action.Status)
+		}
+	}
+	return nil
+}
+
+func updateLinkReportsForActions(reports []LinkReport, actions []linkAction, dryRun bool) {
+	actionByPath := map[string]string{}
+	for _, action := range actions {
+		actionByPath[action.Link.Path] = action.Status
+	}
+	for i := range reports {
+		if planned, ok := actionByPath[reports[i].Path]; ok {
+			if dryRun {
+				reports[i].Status = dryRunLinkStatus(planned)
+			} else {
+				reports[i].Status = planned
+			}
+		}
+	}
+}
+
 func createSymlink(link desiredLink) error {
 	if err := os.MkdirAll(filepath.Dir(link.Path), 0o755); err != nil {
 		return err
@@ -1005,6 +1287,15 @@ func replaceSymlink(link desiredLink) error {
 		return err
 	}
 	return os.Symlink(link.Target, link.Path)
+}
+
+func removeManagedLinks(links []ManagedLink) error {
+	for _, link := range links {
+		if err := removeManagedLink(link); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func removeManagedLink(link ManagedLink) error {
@@ -1021,9 +1312,9 @@ func removeManagedLink(link ManagedLink) error {
 	return os.Remove(link.Path)
 }
 
-func staleLinks(state State, desired map[string]desiredLink) []ManagedLink {
+func staleLinks(current []ManagedLink, desired map[string]desiredLink) []ManagedLink {
 	stale := make([]ManagedLink, 0)
-	for _, link := range state.Links {
+	for _, link := range current {
 		if _, ok := desired[link.Path]; ok {
 			continue
 		}
@@ -1075,12 +1366,30 @@ func fatalSourceReports(reports []SourceReport) error {
 	return errors.New(strings.Join(problems, "; "))
 }
 
-func fatalLinkReports(reports []LinkReport) error {
+func fatalSkillLinkReports(reports []LinkReport) error {
 	problems := make([]string, 0)
 	for _, report := range reports {
 		switch report.Status {
 		case "unknown-source", "source-not-ready", "inspect-failed", "missing-skill", "ambiguous-skill", "conflict":
-			problem := fmt.Sprintf("%s/%s/%s: %s", report.Agent, report.Source, report.Skill, report.Status)
+			problem := fmt.Sprintf("%s/%s: %s", report.Source, report.Skill, report.Status)
+			if report.Message != "" {
+				problem += " (" + report.Message + ")"
+			}
+			problems = append(problems, problem)
+		}
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(problems, "; "))
+}
+
+func fatalAdapterLinkReports(reports []LinkReport) error {
+	problems := make([]string, 0)
+	for _, report := range reports {
+		switch report.Status {
+		case "conflict":
+			problem := fmt.Sprintf("%s/%s: %s", report.Source, report.Skill, report.Status)
 			if report.Message != "" {
 				problem += " (" + report.Message + ")"
 			}
@@ -1102,24 +1411,24 @@ func selectResolvedSources(all map[string]*resolvedSource, aliases []string) (ma
 	for _, alias := range aliases {
 		src, ok := all[alias]
 		if !ok {
-			return nil, fmt.Errorf("unknown project source %q", alias)
+			return nil, fmt.Errorf("unknown source %q", alias)
 		}
 		selected[alias] = src
 	}
 	return selected, nil
 }
 
-func sourceStateMap(state State) map[string]ProjectSourceState {
-	out := map[string]ProjectSourceState{}
+func sourceStateMap(state State) map[string]SourceState {
+	out := map[string]SourceState{}
 	for _, src := range state.Sources {
 		out[src.Source] = src
 	}
 	return out
 }
 
-func managedLinkMap(state State) map[string]ManagedLink {
+func managedLinkMap(links []ManagedLink) map[string]ManagedLink {
 	out := map[string]ManagedLink{}
-	for _, link := range state.Links {
+	for _, link := range links {
 		out[link.Path] = link
 	}
 	return out
@@ -1133,7 +1442,7 @@ func desiredLinkMap(links []desiredLink) map[string]desiredLink {
 	return out
 }
 
-func mergeSourceStates(state State, updates []ProjectSourceState, removeAliases map[string]struct{}) State {
+func mergeSourceStates(state State, updates []SourceState, removeAliases map[string]struct{}) State {
 	current := sourceStateMap(state)
 	for _, update := range updates {
 		current[update.Source] = update
@@ -1143,8 +1452,9 @@ func mergeSourceStates(state State, updates []ProjectSourceState, removeAliases 
 	}
 
 	next := State{
-		Sources: make([]ProjectSourceState, 0, len(current)),
-		Links:   state.Links,
+		Sources:     make([]SourceState, 0, len(current)),
+		SkillLinks:  state.SkillLinks,
+		ClaudeLinks: state.ClaudeLinks,
 	}
 	for _, src := range current {
 		next.Sources = append(next.Sources, src)
@@ -1157,14 +1467,23 @@ func mergeSourceStates(state State, updates []ProjectSourceState, removeAliases 
 
 func ensureManifestDefaults(manifest *Manifest) {
 	if manifest.Sources == nil {
-		manifest.Sources = map[string]ProjectSource{}
-	}
-	if manifest.Agents == nil {
-		manifest.Agents = map[string]ProjectAgentOverride{}
+		manifest.Sources = map[string]ManifestSource{}
 	}
 	if manifest.Skills == nil {
-		manifest.Skills = []ProjectSkill{}
+		manifest.Skills = []ManifestSkill{}
 	}
+}
+
+func ensureFile(path string, contents string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(contents), 0o644)
 }
 
 func sanitizeIDComponent(value string) string {
@@ -1213,6 +1532,23 @@ func dryRunLinkStatus(status string) string {
 	}
 }
 
+func managedLinkPaths(links []ManagedLink) []string {
+	paths := make([]string, 0, len(links))
+	for _, link := range links {
+		paths = append(paths, link.Path)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func toManagedLinks(links []desiredLink) []ManagedLink {
+	out := make([]ManagedLink, 0, len(links))
+	for _, link := range links {
+		out = append(out, link.ManagedLink)
+	}
+	return out
+}
+
 func sortSourceReports(reports []SourceReport) {
 	sort.Slice(reports, func(i, j int) bool {
 		return reports[i].Alias < reports[j].Alias
@@ -1221,13 +1557,16 @@ func sortSourceReports(reports []SourceReport) {
 
 func sortLinkReports(reports []LinkReport) {
 	sort.Slice(reports, func(i, j int) bool {
-		if reports[i].Agent != reports[j].Agent {
-			return reports[i].Agent < reports[j].Agent
-		}
 		if reports[i].Source != reports[j].Source {
 			return reports[i].Source < reports[j].Source
 		}
 		return reports[i].Skill < reports[j].Skill
+	})
+}
+
+func sortManagedLinks(links []ManagedLink) {
+	sort.Slice(links, func(i, j int) bool {
+		return links[i].Path < links[j].Path
 	})
 }
 
