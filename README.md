@@ -52,6 +52,12 @@ skills version
 skills --help
 ```
 
+Upgrade an existing install:
+
+```bash
+skills self update
+```
+
 ## Initialize
 
 Inside a Git repo, `skills init` will prompt you to choose between repo-local and global initialization if the repo does not already contain `skills` artifacts.

@@ -19,6 +19,8 @@ Global flags:
 skills
 ├── init [--project|--global] [--cache local|global]
 ├── doctor [--global]
+├── self
+│   └── update [--version <tag>]
 ├── config
 │   └── init
 ├── source
@@ -43,6 +45,16 @@ skills
 ## `skills config init`
 
 Creates the default global config file if it does not already exist.
+
+## `skills self update`
+
+Downloads the latest published macOS release and replaces the currently running `skills` binary.
+
+Flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--version <tag>` | Install a specific release version instead of the latest one |
 
 ## `skills doctor`
 

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/mattgiles/skills/internal/project"
+	"github.com/mattgiles/skills/internal/selfupdate"
 )
 
 func TestSourceAddPersistsConfig(t *testing.T) {
@@ -111,6 +112,36 @@ func TestVersionCommandShowsBuildInfo(t *testing.T) {
 	}
 
 	for _, want := range []string{"version=dev", "commit=unknown", "date=unknown", "platform="} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestSelfUpdateCommandReportsUpdate(t *testing.T) {
+	env := newTestEnv(t)
+
+	previous := runSelfUpdate
+	runSelfUpdate = func(options selfupdate.Options) (selfupdate.Result, error) {
+		return selfupdate.Result{
+			PreviousVersion: options.CurrentVersion,
+			Version:         "v1.2.3",
+			TargetPath:      "/tmp/skills",
+			Updated:         true,
+		}, nil
+	}
+	t.Cleanup(func() {
+		runSelfUpdate = previous
+	})
+
+	stdout, stderr, err := executeCommand(t, env, "self", "update", "--version", "v1.2.3")
+	if err != nil {
+		t.Fatalf("self update error = %v, stderr = %s", err, stderr)
+	}
+	for _, want := range []string{
+		"updated skills from dev to v1.2.3",
+		"binary: /tmp/skills",
+	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("stdout missing %q:\n%s", want, stdout)
 		}

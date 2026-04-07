@@ -34,6 +34,20 @@ skills version
 skills --help
 ```
 
+## Upgrade An Existing Install
+
+Upgrade to the latest release:
+
+```bash
+skills self update
+```
+
+Upgrade to a specific release:
+
+```bash
+skills self update --version v0.1.0
+```
+
 ## Build From Source
 
 Source builds are still available for contributors:
