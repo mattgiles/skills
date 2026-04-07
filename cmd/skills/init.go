@@ -18,6 +18,7 @@ import (
 func newInitCommand() *cobra.Command {
 	var projectScope bool
 	var globalScope bool
+	var cacheMode string
 
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -33,7 +34,7 @@ func newInitCommand() *cobra.Command {
 			}
 
 			if projectScope {
-				return runProjectInit(cmd, cwd)
+				return runProjectInit(cmd, cwd, cacheMode)
 			}
 			if globalScope {
 				return runHomeInit(cmd)
@@ -53,7 +54,7 @@ func newInitCommand() *cobra.Command {
 				return err
 			}
 			if artifacts.HasArtifacts {
-				return runProjectInit(cmd, projectRoot)
+				return runProjectInit(cmd, projectRoot, cacheMode)
 			}
 
 			if !isInteractive(cmd.InOrStdin(), cmd.OutOrStdout()) {
@@ -67,17 +68,22 @@ func newInitCommand() *cobra.Command {
 			if scope == "global" {
 				return runHomeInit(cmd)
 			}
-			return runProjectInit(cmd, projectRoot)
+			return runProjectInit(cmd, projectRoot, cacheMode)
 		},
 	}
 
 	cmd.Flags().BoolVar(&projectScope, "project", false, "Initialize repo-local project state")
 	cmd.Flags().BoolVar(&globalScope, "global", false, "Initialize shared home/global state")
+	cmd.Flags().StringVar(&cacheMode, "cache", "", "Project cache backend: local or global")
 	return cmd
 }
 
-func runProjectInit(cmd *cobra.Command, projectDir string) error {
-	result, err := project.InitProject(projectDir)
+func runProjectInit(cmd *cobra.Command, projectDir string, requestedCacheMode string) error {
+	cacheMode, err := resolveProjectInitCacheMode(cmd, projectDir, requestedCacheMode)
+	if err != nil {
+		return err
+	}
+	result, err := project.InitProject(projectDir, project.InitProjectOptions{CacheMode: cacheMode})
 	if err != nil {
 		return err
 	}
@@ -87,6 +93,12 @@ func runProjectInit(cmd *cobra.Command, projectDir string) error {
 	} else {
 		fmt.Fprintf(cmd.OutOrStdout(), "manifest already exists: %s\n", result.ManifestPath)
 	}
+	if result.LocalConfigSaved {
+		fmt.Fprintf(cmd.OutOrStdout(), "saved local config: %s\n", result.LocalConfigPath)
+	} else {
+		fmt.Fprintf(cmd.OutOrStdout(), "local config already set: %s\n", result.LocalConfigPath)
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "cache mode: %s\n", result.CacheMode)
 	if result.GitignoreUpdated {
 		fmt.Fprintf(cmd.OutOrStdout(), "updated gitignore: %s\n", result.GitignorePath)
 	} else {
@@ -139,6 +151,72 @@ func promptInitScope(cmd *cobra.Command) (string, error) {
 		return "global", nil
 	default:
 		return "", errors.New("invalid init choice; use skills init --project or skills init --global")
+	}
+}
+
+func resolveProjectInitCacheMode(cmd *cobra.Command, projectDir string, requested string) (project.CacheMode, error) {
+	if requested != "" {
+		return normalizeCacheMode(requested)
+	}
+
+	current, err := project.LoadLocalConfig(projectDir)
+	if err != nil {
+		return "", err
+	}
+
+	if !isInteractive(cmd.InOrStdin(), cmd.OutOrStdout()) {
+		if current.Exists || current.Implicit {
+			if current.Exists {
+				return current.Mode, nil
+			}
+			return "", errors.New("project cache mode is not configured yet; use --cache=local or --cache=global")
+		}
+		return "", errors.New("project cache mode is not configured yet; use --cache=local or --cache=global")
+	}
+
+	return promptProjectCacheMode(cmd, current.Mode)
+}
+
+func promptProjectCacheMode(cmd *cobra.Command, current project.CacheMode) (project.CacheMode, error) {
+	defaultLabel := string(current)
+	if defaultLabel == "" {
+		defaultLabel = string(project.CacheModeLocal)
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Choose project cache mode [%s]:\n", defaultLabel)
+	fmt.Fprintln(cmd.OutOrStdout(), "1. local")
+	fmt.Fprintln(cmd.OutOrStdout(), "2. global")
+	fmt.Fprint(cmd.OutOrStdout(), "> ")
+
+	reader := bufio.NewReader(cmd.InOrStdin())
+	choice, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+
+	trimmed := strings.TrimSpace(strings.ToLower(choice))
+	if trimmed == "" {
+		return current, nil
+	}
+
+	switch trimmed {
+	case "1", "local":
+		return project.CacheModeLocal, nil
+	case "2", "global":
+		return project.CacheModeGlobal, nil
+	default:
+		return "", errors.New("invalid cache choice; use --cache=local or --cache=global")
+	}
+}
+
+func normalizeCacheMode(value string) (project.CacheMode, error) {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case "local":
+		return project.CacheModeLocal, nil
+	case "global":
+		return project.CacheModeGlobal, nil
+	default:
+		return "", fmt.Errorf("invalid cache mode %q: use local or global", value)
 	}
 }
 

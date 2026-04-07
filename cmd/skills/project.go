@@ -27,7 +27,9 @@ func newProjectCommand() *cobra.Command {
 }
 
 func newProjectInitCommand() *cobra.Command {
-	return &cobra.Command{
+	var cacheMode string
+
+	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Create a project standardized workspace",
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -36,24 +38,12 @@ func newProjectInitCommand() *cobra.Command {
 				return err
 			}
 
-			result, err := project.InitProject(projectDir)
-			if err != nil {
-				return err
-			}
-
-			if result.ManifestCreated {
-				fmt.Fprintf(cmd.OutOrStdout(), "created manifest: %s\n", result.ManifestPath)
-			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "manifest already exists: %s\n", result.ManifestPath)
-			}
-			if result.GitignoreUpdated {
-				fmt.Fprintf(cmd.OutOrStdout(), "updated gitignore: %s\n", result.GitignorePath)
-			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "gitignore already covers managed runtime artifacts: %s\n", result.GitignorePath)
-			}
-			return nil
+			return runProjectInit(cmd, projectDir, cacheMode)
 		},
 	}
+
+	cmd.Flags().StringVar(&cacheMode, "cache", "", "Project cache backend: local or global")
+	return cmd
 }
 
 func newProjectStatusCommand() *cobra.Command {

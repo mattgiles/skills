@@ -14,6 +14,8 @@
 
 This file is managed by `skills`. It records resolved source commits plus the managed canonical and Claude adapter links for the active scope.
 
+Project-local user cache preferences are stored separately in `.agents/local.yaml`. They are not part of `.agents/state.yaml`.
+
 ## Schema
 
 ```yaml
@@ -52,5 +54,6 @@ Managed Claude adapter symlinks in the scope’s `.claude/skills` directory.
 ## Notes
 
 - project scope writes `.agents/state.yaml` in the repo
+- project scope stores per-user cache selection in `.agents/local.yaml`
 - home scope writes `~/.agents/state.yaml` by default
 - stale-link detection is tracked separately for canonical skill links and Claude adapter links

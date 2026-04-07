@@ -77,4 +77,33 @@ func TestStateRoundTripIncludesSourceState(t *testing.T) {
 	if got := StatePath(projectDir); got != filepath.Join(projectDir, ".agents", "state.yaml") {
 		t.Fatalf("StatePath() = %q", got)
 	}
+	if got := LocalConfigPath(projectDir); got != filepath.Join(projectDir, ".agents", "local.yaml") {
+		t.Fatalf("LocalConfigPath() = %q", got)
+	}
+}
+
+func TestLocalConfigRoundTripDefaultsToLocal(t *testing.T) {
+	projectDir := t.TempDir()
+
+	loaded, err := LoadLocalConfig(projectDir)
+	if err != nil {
+		t.Fatalf("LoadLocalConfig() error = %v", err)
+	}
+	if loaded.Mode != CacheModeLocal || !loaded.Implicit || loaded.Exists {
+		t.Fatalf("unexpected default local config: %+v", loaded)
+	}
+
+	if err := SaveLocalConfig(projectDir, LocalConfig{
+		Cache: LocalCacheConfig{Mode: CacheModeGlobal},
+	}); err != nil {
+		t.Fatalf("SaveLocalConfig() error = %v", err)
+	}
+
+	loaded, err = LoadLocalConfig(projectDir)
+	if err != nil {
+		t.Fatalf("LoadLocalConfig() error = %v", err)
+	}
+	if loaded.Mode != CacheModeGlobal || !loaded.Exists || loaded.Implicit {
+		t.Fatalf("unexpected saved local config: %+v", loaded)
+	}
 }

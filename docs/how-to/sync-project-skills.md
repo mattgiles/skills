@@ -1,6 +1,11 @@
 # Sync Project Skills
 
-Use `skills project sync` to ensure sources exist, resolve the correct commit, materialize worktrees under `.agents/cache/worktrees`, and link the selected skills into the project’s canonical `.agents/skills` directory. The same sync also creates Claude adapter links in `.claude/skills`.
+Use `skills project sync` to ensure sources exist, resolve the correct commit, materialize worktrees in the active project cache backend, and link the selected skills into the project’s canonical `.agents/skills` directory. The same sync also creates Claude adapter links in `.claude/skills`.
+
+Project cache backends:
+
+- `local`: worktrees under `.agents/cache/worktrees`
+- `global`: worktrees under the global `worktree_root`
 
 ## Run A Normal Sync
 

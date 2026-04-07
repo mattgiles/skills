@@ -20,7 +20,11 @@ Global config owns machine-level shared defaults:
 - which ref each source should resolve
 - which URLs those project sources come from
 - which skills should exist in the project’s canonical `.agents/skills`
-- project-local clone/worktree storage under `.agents/cache`
+
+`.agents/local.yaml` owns repo-local user preference:
+
+- whether this repo user wants `cache.mode: local`
+- or `cache.mode: global`
 
 ## Home Manifest
 
@@ -33,4 +37,4 @@ Global config owns machine-level shared defaults:
 
 This keeps project workflows self-contained, while still allowing a separate shared home workflow.
 
-Project syncs should not mutate shared home installs. Home syncs should not mutate project installs. Project mode uses repo-local storage; home mode uses shared machine-level storage.
+Project syncs should not mutate shared home installs. Home syncs should not mutate project installs. Project installs are always repo-local, while cache storage can be repo-local or shared depending on the repo user's local settings.

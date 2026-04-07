@@ -7,23 +7,27 @@ Each project declares the sources, refs, and canonical installed skills it wants
 From the project directory:
 
 ```bash
-skills project init
+skills project init --cache=local
 ```
 
 This creates:
 
 - `.agents/manifest.yaml`
-- `.agents/cache/repos/`
-- `.agents/cache/worktrees/`
+- `.agents/local.yaml`
 - `.agents/skills/`
 - `.claude/skills/`
+- `.agents/cache/repos/`
+- `.agents/cache/worktrees/`
 - `.gitignore` coverage for:
   - `.agents/state.yaml`
+  - `.agents/local.yaml`
   - `.agents/cache/`
   - `.agents/skills/`
   - `.claude/skills/`
 
-`skills` treats `.agents/state.yaml`, `.agents/skills/`, and `.claude/skills/` as generated runtime artifacts. They are not meant to be checked into Git.
+Use `--cache=global` instead when you want this repo to install skills into `.agents/skills` but reuse the global clone and worktree roots from your machine config.
+
+`skills` treats `.agents/state.yaml`, `.agents/local.yaml`, `.agents/skills/`, and `.claude/skills/` as generated or user-local runtime artifacts. They are not meant to be checked into Git.
 
 ## Add The Required Sections
 

@@ -85,13 +85,6 @@ func Check(ctx context.Context, cwd string, scope Scope) (Report, error) {
 
 	switch scope {
 	case ScopeProject:
-		report.addFinding(Finding{
-			Section:  SectionConfig,
-			Severity: SeverityInfo,
-			Code:     "config-not-required",
-			Subject:  "project scope",
-			Message:  "project scope is self-contained and does not require global config",
-		})
 		checkProjectWorkspace(ctx, &report, cwd, gitAvailable)
 	case ScopeGlobal:
 		configPath, err := config.DefaultConfigPath()
@@ -332,6 +325,14 @@ func checkProjectWorkspace(ctx context.Context, report *Report, cwd string, gitA
 	report.Target = cwd
 	manifestPath := project.ManifestPath(cwd)
 	statePath := project.StatePath(cwd)
+	localConfigPath := project.LocalConfigPath(cwd)
+
+	cacheConfig, ok, skipReason := inspectProjectCacheConfig(report, cwd, localConfigPath)
+	if !ok {
+		addProjectOwnershipFindings(report, cwd)
+		addSkippedSections(report, skipReason)
+		return
+	}
 
 	addProjectOwnershipFindings(report, cwd)
 
@@ -384,6 +385,179 @@ func checkProjectWorkspace(ctx context.Context, report *Report, cwd string, gitA
 	}
 
 	addStatusFindings(report, status, ScopeProject)
+
+	_ = cacheConfig
+}
+
+func inspectProjectCacheConfig(report *Report, cwd string, localConfigPath string) (project.ProjectCacheConfig, bool, string) {
+	cacheConfig, err := project.LoadLocalConfig(cwd)
+	if err != nil {
+		report.addFinding(Finding{
+			Section:  SectionConfig,
+			Severity: SeverityError,
+			Code:     "local-config-parse-failed",
+			Subject:  localConfigPath,
+			Message:  err.Error(),
+			Path:     localConfigPath,
+		})
+		return project.ProjectCacheConfig{}, false, "project cache settings could not be parsed"
+	}
+
+	if !cacheConfig.Exists {
+		report.addFinding(Finding{
+			Section:  SectionConfig,
+			Severity: SeverityWarn,
+			Code:     "local-config-missing",
+			Subject:  localConfigPath,
+			Message:  "project cache mode is not explicitly configured; implicit local mode is in effect",
+			Hint:     "run skills init --project --cache=local or skills init --project --cache=global",
+			Path:     localConfigPath,
+		})
+	}
+
+	report.addFinding(Finding{
+		Section:  SectionConfig,
+		Severity: SeverityInfo,
+		Code:     "project-cache-mode",
+		Subject:  string(cacheConfig.Mode),
+		Message:  "project install scope is repo-local and cache mode is " + string(cacheConfig.Mode),
+		Path:     localConfigPath,
+	})
+
+	if cacheConfig.Mode == project.CacheModeLocal {
+		report.addFinding(Finding{
+			Section:  SectionConfig,
+			Severity: SeverityInfo,
+			Code:     "config-not-required",
+			Subject:  "project scope",
+			Message:  "local project cache mode does not require global config",
+		})
+		return cacheConfig, true, ""
+	}
+
+	configPath, err := config.DefaultConfigPath()
+	if err != nil {
+		report.addFinding(Finding{
+			Section:  SectionConfig,
+			Severity: SeverityError,
+			Code:     "config-path-failed",
+			Subject:  "config",
+			Message:  err.Error(),
+		})
+		return cacheConfig, false, "global cache config path could not be resolved"
+	}
+
+	cfg, usable, configPaths := loadAndValidateProjectCacheConfig(report, configPath)
+	if !usable {
+		return cacheConfig, false, "global cache config could not be loaded"
+	}
+
+	report.addFinding(Finding{
+		Section:  SectionConfig,
+		Severity: SeverityInfo,
+		Code:     "project-cache-roots",
+		Subject:  string(cacheConfig.Mode),
+		Message:  "project uses global cache roots from global config",
+		Path:     configPaths.repoRoot,
+		Target:   configPaths.worktreeRoot,
+	})
+
+	_ = cfg
+	return cacheConfig, true, ""
+}
+
+func loadAndValidateProjectCacheConfig(report *Report, configPath string) (config.Config, bool, paths) {
+	cfg := config.DefaultConfig()
+	configPaths := paths{}
+
+	info, err := os.Stat(configPath)
+	configExists := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		report.addFinding(Finding{
+			Section:  SectionConfig,
+			Severity: SeverityError,
+			Code:     "config-stat-failed",
+			Subject:  configPath,
+			Message:  err.Error(),
+			Path:     configPath,
+		})
+		return cfg, false, configPaths
+	}
+
+	loaded, err := config.Load(configPath)
+	if err != nil {
+		report.addFinding(Finding{
+			Section:  SectionConfig,
+			Severity: SeverityError,
+			Code:     "config-parse-failed",
+			Subject:  configPath,
+			Message:  err.Error(),
+			Path:     configPath,
+		})
+		return cfg, false, configPaths
+	}
+	cfg = loaded
+
+	if !configExists {
+		report.addFinding(Finding{
+			Section:  SectionConfig,
+			Severity: SeverityInfo,
+			Code:     "config-missing",
+			Subject:  configPath,
+			Message:  "global config file not found; defaults are in effect for global cache mode",
+			Path:     configPath,
+		})
+	} else if info != nil && info.IsDir() {
+		report.addFinding(Finding{
+			Section:  SectionConfig,
+			Severity: SeverityError,
+			Code:     "config-invalid",
+			Subject:  configPath,
+			Message:  "config path is a directory, not a file",
+			Path:     configPath,
+		})
+		return cfg, false, configPaths
+	}
+
+	repoRoot, err := config.RepoRootPath(cfg)
+	if err != nil {
+		report.addFinding(Finding{
+			Section:  SectionConfig,
+			Severity: SeverityError,
+			Code:     "repo-root-invalid",
+			Subject:  "repo_root",
+			Message:  err.Error(),
+		})
+	} else {
+		configPaths.repoRoot = repoRoot
+	}
+
+	worktreeRoot, err := config.WorktreeRootPath(cfg)
+	if err != nil {
+		report.addFinding(Finding{
+			Section:  SectionConfig,
+			Severity: SeverityError,
+			Code:     "worktree-root-invalid",
+			Subject:  "worktree_root",
+			Message:  err.Error(),
+		})
+	} else {
+		configPaths.worktreeRoot = worktreeRoot
+	}
+
+	if configPaths.repoRoot != "" && configPaths.worktreeRoot != "" && configPaths.repoRoot == configPaths.worktreeRoot {
+		report.addFinding(Finding{
+			Section:  SectionConfig,
+			Severity: SeverityWarn,
+			Code:     "shared-storage-path",
+			Subject:  configPaths.repoRoot,
+			Message:  "repo_root and worktree_root resolve to the same path",
+			Hint:     "set repo_root and worktree_root to separate directories",
+			Path:     configPaths.repoRoot,
+		})
+	}
+
+	return cfg, onlySectionErrors(report, SectionConfig) == 0, configPaths
 }
 
 func addProjectOwnershipFindings(report *Report, projectDir string) {

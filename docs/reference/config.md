@@ -1,6 +1,6 @@
 # Global Config Reference
 
-This file only controls shared home/global behavior and the global source registry. Project-local `skills project ...` workflows are self-contained and do not require this config file.
+This file controls shared home/global behavior, the global source registry, and the clone/worktree roots used by project repos that opt into `--cache=global`.
 
 ## File Location
 
@@ -25,8 +25,8 @@ sources:
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `repo_root` | string | no | Canonical clone root for shared home/global workflows |
-| `worktree_root` | string | no | Root for pinned worktrees for shared home/global workflows |
+| `repo_root` | string | no | Canonical clone root for shared home/global workflows and project repos using global cache mode |
+| `worktree_root` | string | no | Root for pinned worktrees for shared home/global workflows and project repos using global cache mode |
 | `shared_skills_dir` | string | no | Canonical shared home skill directory |
 | `shared_claude_skills_dir` | string | no | Shared home Claude adapter directory |
 | `sources` | map | no | Registered source aliases and URLs for global/home workflows |
@@ -64,3 +64,5 @@ Home scope derives its manifest and state paths from `shared_skills_dir`:
 
 - manifest: sibling `manifest.yaml`
 - state: sibling `state.yaml`
+
+Project scope only uses this config file when a repo user's `.agents/local.yaml` selects `cache.mode: global`. Project installs still remain repo-local in `.agents/skills`.

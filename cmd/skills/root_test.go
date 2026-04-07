@@ -125,7 +125,7 @@ func TestDoctorProjectHealthy(t *testing.T) {
 	remote := initRemoteRepo(t, map[string]string{
 		"analytics/SKILL.md": "# analytics",
 	})
-	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init"); err != nil {
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=local"); err != nil {
 		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
 	}
 	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics"}))
@@ -148,6 +148,7 @@ func TestDoctorProjectHealthy(t *testing.T) {
 		"SKILLS",
 		"CLAUDE",
 		"HINTS",
+		"project-cache-mode",
 		"config-not-required",
 		"doctor: 0 errors, 0 warnings",
 	} {
@@ -172,7 +173,7 @@ func TestDoctorProjectMissingManifest(t *testing.T) {
 		"project manifest not found",
 		"run skills project init",
 		"not checked because project manifest is missing",
-		"doctor: 1 errors, 1 warnings",
+		"doctor: 1 errors, 2 warnings",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("stdout missing %q:\n%s", want, stdout)
@@ -204,7 +205,7 @@ func TestDoctorConfigParseFailure(t *testing.T) {
 	env := newTestEnv(t)
 	projectDir := t.TempDir()
 
-	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init"); err != nil {
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=local"); err != nil {
 		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
 	}
 
@@ -217,7 +218,7 @@ func TestDoctorConfigParseFailure(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"project scope is self-contained",
+		"project install scope is repo-local and cache mode is local",
 		"doctor: 0 errors, 2 warnings",
 	} {
 		if !strings.Contains(stdout, want) {
@@ -234,7 +235,7 @@ func TestDoctorWarnsAboutStaleManagedLinks(t *testing.T) {
 		"analytics/SKILL.md": "# analytics",
 		"lint/SKILL.md":      "# lint",
 	})
-	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init"); err != nil {
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=local"); err != nil {
 		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
 	}
 
@@ -267,7 +268,7 @@ func TestProjectInitCreatesStandardizedWorkspace(t *testing.T) {
 	env := newTestEnv(t)
 	projectDir := t.TempDir()
 
-	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init")
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=local")
 	if err != nil {
 		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
 	}
@@ -277,6 +278,7 @@ func TestProjectInitCreatesStandardizedWorkspace(t *testing.T) {
 
 	for _, path := range []string{
 		filepath.Join(projectDir, ".agents", "manifest.yaml"),
+		filepath.Join(projectDir, ".agents", "local.yaml"),
 		filepath.Join(projectDir, ".agents", "skills"),
 		filepath.Join(projectDir, ".agents", "cache"),
 		filepath.Join(projectDir, ".agents", "cache", "repos"),
@@ -296,6 +298,7 @@ func TestProjectInitCreatesStandardizedWorkspace(t *testing.T) {
 	for _, want := range []string{
 		"# BEGIN skills managed runtime artifacts",
 		"/.agents/state.yaml",
+		"/.agents/local.yaml",
 		"/.agents/skills/",
 		"/.agents/cache/",
 		"/.claude/skills/",
@@ -328,7 +331,7 @@ func TestProjectInitUsesRepoRootGitignoreForNestedProject(t *testing.T) {
 	}
 	mustWriteFile(t, filepath.Join(repoRoot, ".gitignore"), "# existing\n")
 
-	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init")
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=local")
 	if err != nil {
 		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
 	}
@@ -344,6 +347,7 @@ func TestProjectInitUsesRepoRootGitignoreForNestedProject(t *testing.T) {
 	for _, want := range []string{
 		"# existing",
 		"/apps/nested/.agents/state.yaml",
+		"/apps/nested/.agents/local.yaml",
 		"/apps/nested/.agents/skills/",
 		"/apps/nested/.agents/cache/",
 		"/apps/nested/.claude/skills/",
@@ -361,14 +365,17 @@ func TestProjectInitIsIdempotentForGitignoreRules(t *testing.T) {
 	env := newTestEnv(t)
 	projectDir := t.TempDir()
 
-	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init"); err != nil {
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=local"); err != nil {
 		t.Fatalf("first project init error = %v, stderr = %s", err, stderr)
 	}
-	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init")
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=local")
 	if err != nil {
 		t.Fatalf("second project init error = %v, stderr = %s", err, stderr)
 	}
 	if !strings.Contains(stdout, "manifest already exists:") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	if !strings.Contains(stdout, "cache mode: local") {
 		t.Fatalf("stdout = %q", stdout)
 	}
 	if !strings.Contains(stdout, "gitignore already covers managed runtime artifacts:") {
@@ -394,7 +401,7 @@ func TestProjectInitFailsWhenManagedPathsAreTracked(t *testing.T) {
 	runGit(t, projectDir, "add", ".agents/skills/legacy/README.md")
 	runGit(t, projectDir, "commit", "-m", "tracked managed path")
 
-	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init")
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=local")
 	if err == nil {
 		t.Fatalf("expected project init error, stdout = %s, stderr = %s", stdout, stderr)
 	}
@@ -420,7 +427,7 @@ func TestDoctorWarnsWhenManagedIgnoreRulesAreMissing(t *testing.T) {
 		"analytics/SKILL.md": "# analytics",
 	})
 
-	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init"); err != nil {
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=local"); err != nil {
 		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
 	}
 	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics"}))
@@ -463,7 +470,7 @@ func TestDoctorErrorsWhenManagedPathsAreTracked(t *testing.T) {
 	for _, want := range []string{
 		"tracked-managed-path",
 		".agents/skills/legacy/README.md",
-		"doctor: 1 errors, 3 warnings",
+		"doctor: 1 errors, 4 warnings",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("stdout missing %q:\n%s", want, stdout)
@@ -475,12 +482,13 @@ func TestSkillsInitProjectFlagCreatesRepoLocalWorkspaceWithoutGlobalConfig(t *te
 	env := newTestEnv(t)
 	projectDir := t.TempDir()
 
-	stdout, stderr, err := executeCommandInDirWithInput(t, env, projectDir, strings.NewReader(""), "init", "--project")
+	stdout, stderr, err := executeCommandInDirWithInput(t, env, projectDir, strings.NewReader(""), "init", "--project", "--cache=local")
 	if err != nil {
 		t.Fatalf("skills init --project error = %v, stderr = %s", err, stderr)
 	}
 	for _, path := range []string{
 		filepath.Join(projectDir, ".agents", "manifest.yaml"),
+		filepath.Join(projectDir, ".agents", "local.yaml"),
 		filepath.Join(projectDir, ".agents", "cache", "repos"),
 		filepath.Join(projectDir, ".agents", "cache", "worktrees"),
 	} {
@@ -490,6 +498,79 @@ func TestSkillsInitProjectFlagCreatesRepoLocalWorkspaceWithoutGlobalConfig(t *te
 	}
 	if !strings.Contains(stdout, "created manifest:") {
 		t.Fatalf("stdout = %q", stdout)
+	}
+	if !strings.Contains(stdout, "cache mode: local") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+}
+
+func TestSkillsInitProjectFlagRequiresCacheModeWhenRepoIsNotConfigured(t *testing.T) {
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+
+	stdout, stderr, err := executeCommandInDirWithInput(t, env, projectDir, strings.NewReader(""), "init", "--project")
+	if err == nil {
+		t.Fatalf("expected skills init --project to fail, stdout = %s, stderr = %s", stdout, stderr)
+	}
+	if !strings.Contains(err.Error(), "project cache mode is not configured yet; use --cache=local or --cache=global") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestProjectInitWithGlobalCacheCreatesLocalSettingsWithoutLocalCacheDirs(t *testing.T) {
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=global")
+	if err != nil {
+		t.Fatalf("project init --cache=global error = %v, stderr = %s", err, stderr)
+	}
+
+	if _, err := os.Stat(filepath.Join(projectDir, ".agents", "local.yaml")); err != nil {
+		t.Fatalf("expected local config: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, ".agents", "cache")); !os.IsNotExist(err) {
+		t.Fatalf("did not expect local cache dir, got err=%v", err)
+	}
+	if !strings.Contains(stdout, "cache mode: global") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+}
+
+func TestProjectSyncWithGlobalCacheUsesSharedRootsButRepoLocalInstalls(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	resolvedProjectDir := resolvedPath(t, projectDir)
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init", "--cache=global"); err != nil {
+		t.Fatalf("project init --cache=global error = %v, stderr = %s", err, stderr)
+	}
+
+	remote := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+	commit := gitOutput(t, remote, "rev-parse", "HEAD")
+	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics"}))
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "sync"); err != nil {
+		t.Fatalf("project sync error = %v, stderr = %s", err, stderr)
+	}
+
+	canonicalPath := filepath.Join(resolvedProjectDir, ".agents", "skills", "analytics")
+	target, err := os.Readlink(canonicalPath)
+	if err != nil {
+		t.Fatalf("Readlink(%q) error = %v", canonicalPath, err)
+	}
+
+	projectID, err := project.ProjectID(resolvedProjectDir)
+	if err != nil {
+		t.Fatalf("ProjectID() error = %v", err)
+	}
+
+	wantTarget := filepath.Join(env.dataHome, "skills", "worktrees", projectID, "repo-one", commit, "analytics")
+	if target != wantTarget {
+		t.Fatalf("canonical target = %q, want %q", target, wantTarget)
 	}
 }
 
@@ -527,7 +608,7 @@ func TestSkillsInitRoutesToRepoRootWhenArtifactsExist(t *testing.T) {
 	repoRoot := t.TempDir()
 	initGitRepo(t, repoRoot)
 
-	if _, stderr, err := executeCommandInDir(t, env, repoRoot, "project", "init"); err != nil {
+	if _, stderr, err := executeCommandInDir(t, env, repoRoot, "project", "init", "--cache=local"); err != nil {
 		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
 	}
 

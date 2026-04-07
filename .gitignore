@@ -3,6 +3,7 @@
 
 # Local runtime state if this repo uses the tool itself
 /.agents/state.yaml
+/.agents/local.yaml
 /.agents/skills/
 /.agents/cache/
 /.claude/skills/

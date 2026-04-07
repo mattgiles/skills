@@ -20,6 +20,7 @@ Cause:
 
 - the effective `.gitignore` does not ignore one or more managed runtime paths:
   - `.agents/state.yaml`
+  - `.agents/local.yaml`
   - `.agents/cache/`
   - `.agents/skills/`
   - `.claude/skills/`
@@ -27,7 +28,7 @@ Cause:
 Fix:
 
 ```bash
-skills project init
+skills project init --cache=local
 ```
 
 ## `tracked-managed-path`
@@ -41,6 +42,25 @@ Fix:
 - move or remove the tracked content from the managed path
 - re-run `skills project init`
 
+## `local-config-missing`
+
+Cause:
+
+- the repo does not yet have an explicit `.agents/local.yaml`
+- `skills` is falling back to implicit local cache mode for compatibility
+
+Fix:
+
+```bash
+skills init --project --cache=local
+```
+
+or:
+
+```bash
+skills init --project --cache=global
+```
+
 ## `manifest not found`
 
 Cause:
@@ -50,7 +70,7 @@ Cause:
 Fix:
 
 ```bash
-skills project init
+skills project init --cache=local
 ```
 
 or:

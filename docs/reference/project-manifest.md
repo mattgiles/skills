@@ -43,8 +43,9 @@ Notes:
 
 - alias validation uses the same rules as global config aliases
 - `ref` must not be empty
-- project mode requires `url` so the repo is self-contained
+- project mode requires `url` so the repo declaration is self-contained
 - home/global mode can still use global source config
+- project cache backend is not declared here; each repo user chooses it in `.agents/local.yaml`
 
 ## `skills[]`
 

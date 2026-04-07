@@ -11,8 +11,13 @@ It is designed to make skill installs reproducible and explicit:
 
 `skills` supports two equally valid workflows:
 
-- repo-local: a project keeps its own manifest, cache, and installed skills inside the repo
-- global/home: a machine keeps shared sources, cache, and installed skills for reuse across many repos
+- project installs: a repo keeps its own manifest and installed skills inside the repo
+- global/home installs: a machine keeps shared installed skills for reuse across many repos
+
+For project installs, each user can independently choose whether that repo uses:
+
+- a repo-local cache under `.agents/cache/`
+- a shared global cache from the user's `skills` config
 
 ## Project Goals
 
@@ -54,7 +59,8 @@ Inside a Git repo, `skills init` will prompt you to choose between repo-local an
 You can always choose explicitly:
 
 ```bash
-skills init --project
+skills init --project --cache=local
+skills init --project --cache=global
 skills init --global
 ```
 
@@ -62,17 +68,18 @@ skills init --global
 
 ### Repo-Local Workflow
 
-Use this when you want a repo to be self-contained and not depend on machine-level `skills` setup.
+Use this when you want a repo to declare and install its own skills in `.agents/skills`.
 
-Initialize the project:
+Initialize the project with a repo-local cache:
 
 ```bash
-skills init --project
+skills init --project --cache=local
 ```
 
 That creates:
 
 - `.agents/manifest.yaml`
+- `.agents/local.yaml`
 - `.agents/cache/repos/`
 - `.agents/cache/worktrees/`
 - `.agents/skills/`
@@ -81,6 +88,7 @@ That creates:
 It also ensures generated runtime paths are gitignored:
 
 - `.agents/state.yaml`
+- `.agents/local.yaml`
 - `.agents/cache/`
 - `.agents/skills/`
 - `.claude/skills/`
@@ -111,7 +119,15 @@ skills project status
 skills doctor
 ```
 
-Repo-local installs are canonical symlinks in `.agents/skills/`, backed by pinned worktrees in `.agents/cache/worktrees/`.
+Project installs are canonical symlinks in `.agents/skills/`.
+
+If you want the repo to keep its installs in `.agents/skills` but reuse a shared machine-level Git cache, initialize it with:
+
+```bash
+skills init --project --cache=global
+```
+
+That writes an untracked `.agents/local.yaml` file for your user and makes future `project` commands use the global clone/worktree roots from your `skills` config, while still installing into the repo.
 
 ### Global / Home Workflow
 
@@ -185,21 +201,32 @@ skills project update --sync
 skills home update --sync
 ```
 
-## Repo-Local vs Global
+## Project Installs vs Global Installs
 
-Choose repo-local when:
+Choose project installs when:
 
-- the repo should be self-contained
+- the repo should declare and install its own skills
 - other contributors should not need machine-level `skills` setup
-- you want cache and install state isolated to one project
+- you want `.agents/skills` inside the repo
+
+Choose a repo-local project cache when:
+
+- you want the repo's clone/worktree data isolated inside `.agents/cache/`
+- you want the project to stay fully local even at the cache layer
+
+Choose a global project cache when:
+
+- you want repo installs in `.agents/skills` but shared clone/worktree storage
+- you work across many repos and want to reuse fetched Git data
 
 Choose global/home when:
 
 - you want one shared install for many repos
 - you prefer a machine-level source registry
 - you want shared clone and worktree storage outside individual repos
+- you want the installed skills themselves to live in `~/.agents/skills`
 
-You can use both. A repo-local workflow does not require global config, and a global/home workflow does not prevent using repo-local installs in specific repos.
+You can use both. A project install can use either a repo-local cache or a global cache, and that per-repo cache choice is a local user preference, not tracked repo config.
 
 ## Documentation
 

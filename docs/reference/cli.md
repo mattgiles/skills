@@ -17,7 +17,7 @@ Global flags:
 
 ```text
 skills
-├── init [--project|--global]
+├── init [--project|--global] [--cache local|global]
 ├── doctor [--global]
 ├── config
 │   └── init
@@ -34,7 +34,7 @@ skills
 │   └── update [source...] [--dry-run] [--sync]
 ├── version
 └── project
-    ├── init
+    ├── init [--cache local|global]
     ├── status
     ├── sync [--dry-run]
     └── update [source...] [--dry-run] [--sync]
@@ -52,9 +52,10 @@ Checks:
 
 - `git` availability
 - project manifest and state parsing
+- project local settings parsing in `.agents/local.yaml`
 - project `.gitignore` ownership for managed runtime paths
 - source readiness and ref resolution
-- project-local cache health under `.agents/cache/`
+- active project cache mode and cache-root health
 - canonical `.agents/skills` link health
 - Claude `.claude/skills` adapter health
 
@@ -74,12 +75,14 @@ Flags:
 | --- | --- |
 | `--project` | Initialize repo-local project state explicitly |
 | `--global` | Initialize shared home/global state explicitly |
+| `--cache <local\|global>` | Choose the cache backend for project mode |
 
 Behavior:
 
 - inside a Git repo, `skills init` routes to repo-local initialization automatically when repo-local `skills` artifacts already exist
 - inside a Git repo with no existing `skills` artifacts, `skills init` prompts on an interactive TTY
-- in non-interactive contexts, pass `--project` or `--global`
+- project mode records the chosen cache backend in untracked `.agents/local.yaml`
+- in non-interactive contexts, pass `--project --cache=<local|global>` or `--global`
 - outside a Git repo, `skills init` requires explicit scope
 
 ## `skills source add <alias> <git-url>`
@@ -125,15 +128,22 @@ Flags:
 Creates a project-local standardized workspace:
 
 - `.agents/manifest.yaml`
-- `.agents/cache/repos/`
-- `.agents/cache/worktrees/`
+- `.agents/local.yaml`
 - `.agents/skills/`
 - `.claude/skills/`
+- `.agents/cache/repos/` and `.agents/cache/worktrees/` when `--cache=local`
 - ignore rules for:
   - `.agents/state.yaml`
+  - `.agents/local.yaml`
   - `.agents/cache/`
   - `.agents/skills/`
   - `.claude/skills/`
+
+Flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--cache <local\|global>` | Choose the cache backend for this repo user |
 
 If the project lives inside a Git repo, `skills project init` updates the repo-root `.gitignore`. It fails if those managed runtime paths already contain tracked Git content.
 
@@ -160,7 +170,9 @@ Syncs the declared project skills into:
 
 - canonical project links in `.agents/skills`
 - Claude adapter links in `.claude/skills`
-- using project-local clones and worktrees under `.agents/cache/`
+- using either:
+  - repo-local clones and worktrees under `.agents/cache/` when `.agents/local.yaml` selects `local`
+  - global clone and worktree roots from config when `.agents/local.yaml` selects `global`
 
 Flags:
 

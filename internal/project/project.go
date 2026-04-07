@@ -23,6 +23,7 @@ import (
 const (
 	ManifestFilename     = ".agents/manifest.yaml"
 	StateFilename        = ".agents/state.yaml"
+	LocalConfigFilename  = ".agents/local.yaml"
 	SkillsDirname        = ".agents/skills"
 	ClaudeSkillsDirname  = ".claude/skills"
 	CacheDirname         = ".agents/cache"
@@ -34,6 +35,13 @@ const (
 	sharedWorkspaceName  = "home"
 	gitignoreBeginMarker = "# BEGIN skills managed runtime artifacts"
 	gitignoreEndMarker   = "# END skills managed runtime artifacts"
+)
+
+type CacheMode string
+
+const (
+	CacheModeLocal  CacheMode = "local"
+	CacheModeGlobal CacheMode = "global"
 )
 
 type Manifest struct {
@@ -49,6 +57,14 @@ type ManifestSource struct {
 type ManifestSkill struct {
 	Source string `yaml:"source"`
 	Name   string `yaml:"name"`
+}
+
+type LocalConfig struct {
+	Cache LocalCacheConfig `yaml:"cache,omitempty"`
+}
+
+type LocalCacheConfig struct {
+	Mode CacheMode `yaml:"mode,omitempty"`
 }
 
 type State struct {
@@ -126,6 +142,9 @@ type UpdateOptions struct {
 type InitProjectResult struct {
 	ManifestPath     string
 	ManifestCreated  bool
+	LocalConfigPath  string
+	LocalConfigSaved bool
+	CacheMode        CacheMode
 	GitignorePath    string
 	GitignoreUpdated bool
 }
@@ -145,6 +164,13 @@ type ArtifactReport struct {
 	Paths        []string
 }
 
+type ProjectCacheConfig struct {
+	Path     string
+	Exists   bool
+	Implicit bool
+	Mode     CacheMode
+}
+
 type workspace struct {
 	Name            string
 	RootDir         string
@@ -156,6 +182,8 @@ type workspace struct {
 	RepoRoot        string
 	WorktreeRoot    string
 	GlobalSources   map[string]config.SourceConfig
+	CacheMode       CacheMode
+	LocalConfigPath string
 }
 
 type desiredLink struct {
@@ -198,6 +226,10 @@ func StatePath(projectDir string) string {
 	return filepath.Join(projectDir, StateFilename)
 }
 
+func LocalConfigPath(projectDir string) string {
+	return filepath.Join(projectDir, LocalConfigFilename)
+}
+
 func SkillsDir(projectDir string) string {
 	return filepath.Join(projectDir, SkillsDirname)
 }
@@ -218,6 +250,84 @@ func WorktreeRoot(projectDir string) string {
 	return filepath.Join(projectDir, WorktreeCacheDirname)
 }
 
+func DefaultLocalConfig() LocalConfig {
+	return LocalConfig{
+		Cache: LocalCacheConfig{
+			Mode: CacheModeLocal,
+		},
+	}
+}
+
+func LoadLocalConfig(projectDir string) (ProjectCacheConfig, error) {
+	return LoadLocalConfigAt(LocalConfigPath(projectDir))
+}
+
+func LoadLocalConfigAt(path string) (ProjectCacheConfig, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return ProjectCacheConfig{
+			Path:     path,
+			Implicit: true,
+			Mode:     CacheModeLocal,
+		}, nil
+	}
+	if err != nil {
+		return ProjectCacheConfig{}, err
+	}
+
+	cfg := DefaultLocalConfig()
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return ProjectCacheConfig{}, fmt.Errorf("parse local config %s: %w", path, err)
+	}
+	ensureLocalConfigDefaults(&cfg)
+	if err := ValidateLocalConfig(cfg); err != nil {
+		return ProjectCacheConfig{}, err
+	}
+
+	return ProjectCacheConfig{
+		Path:   path,
+		Exists: true,
+		Mode:   cfg.Cache.Mode,
+	}, nil
+}
+
+func SaveLocalConfig(projectDir string, cfg LocalConfig) error {
+	return SaveLocalConfigAt(LocalConfigPath(projectDir), cfg)
+}
+
+func SaveLocalConfigAt(path string, cfg LocalConfig) error {
+	ensureLocalConfigDefaults(&cfg)
+	if err := ValidateLocalConfig(cfg); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+func ValidateLocalConfig(cfg LocalConfig) error {
+	switch cfg.Cache.Mode {
+	case CacheModeLocal:
+		return nil
+	case CacheModeGlobal:
+		return nil
+	default:
+		return fmt.Errorf("invalid cache mode %q: use local or global", cfg.Cache.Mode)
+	}
+}
+
+func ensureLocalConfigDefaults(cfg *LocalConfig) {
+	if cfg.Cache.Mode == "" {
+		cfg.Cache.Mode = CacheModeLocal
+	}
+}
+
 func HomeManifestPath(cfg config.Config) (string, error) {
 	ws, err := homeWorkspace(cfg)
 	if err != nil {
@@ -234,8 +344,27 @@ func HomeStatePath(cfg config.Config) (string, error) {
 	return ws.StatePath, nil
 }
 
-func InitProject(projectDir string) (InitProjectResult, error) {
-	ws := projectWorkspace(projectDir)
+type InitProjectOptions struct {
+	CacheMode CacheMode
+}
+
+func InitProject(projectDir string, options InitProjectOptions) (InitProjectResult, error) {
+	cacheMode := options.CacheMode
+	if cacheMode == "" {
+		current, err := LoadLocalConfig(projectDir)
+		if err != nil {
+			return InitProjectResult{}, err
+		}
+		cacheMode = current.Mode
+	}
+	if cacheMode != CacheModeLocal && cacheMode != CacheModeGlobal {
+		return InitProjectResult{}, fmt.Errorf("invalid cache mode %q: use local or global", cacheMode)
+	}
+
+	ws, err := projectWorkspace(projectDir, cacheMode)
+	if err != nil {
+		return InitProjectResult{}, err
+	}
 
 	ownership, err := InspectProjectOwnership(projectDir)
 	if err != nil {
@@ -249,8 +378,10 @@ func InitProject(projectDir string) (InitProjectResult, error) {
 	}
 
 	result := InitProjectResult{
-		ManifestPath:  ws.ManifestPath,
-		GitignorePath: ownership.GitignorePath,
+		ManifestPath:    ws.ManifestPath,
+		LocalConfigPath: ws.LocalConfigPath,
+		CacheMode:       cacheMode,
+		GitignorePath:   ownership.GitignorePath,
 	}
 
 	if _, err := os.Stat(ws.ManifestPath); errors.Is(err, os.ErrNotExist) {
@@ -262,17 +393,32 @@ func InitProject(projectDir string) (InitProjectResult, error) {
 		return InitProjectResult{}, err
 	}
 
+	currentLocalConfig, err := LoadLocalConfig(projectDir)
+	if err != nil {
+		return InitProjectResult{}, err
+	}
+	if !currentLocalConfig.Exists || currentLocalConfig.Mode != cacheMode {
+		if err := SaveLocalConfig(projectDir, LocalConfig{
+			Cache: LocalCacheConfig{Mode: cacheMode},
+		}); err != nil {
+			return InitProjectResult{}, err
+		}
+		result.LocalConfigSaved = true
+	}
+
 	if err := os.MkdirAll(ws.SkillsDir, 0o755); err != nil {
 		return InitProjectResult{}, err
 	}
 	if err := os.MkdirAll(ws.ClaudeSkillsDir, 0o755); err != nil {
 		return InitProjectResult{}, err
 	}
-	if err := os.MkdirAll(ws.RepoRoot, 0o755); err != nil {
-		return InitProjectResult{}, err
-	}
-	if err := os.MkdirAll(ws.WorktreeRoot, 0o755); err != nil {
-		return InitProjectResult{}, err
+	if cacheMode == CacheModeLocal {
+		if err := os.MkdirAll(ws.RepoRoot, 0o755); err != nil {
+			return InitProjectResult{}, err
+		}
+		if err := os.MkdirAll(ws.WorktreeRoot, 0o755); err != nil {
+			return InitProjectResult{}, err
+		}
 	}
 	updated, err := ensureProjectGitignore(ownership)
 	if err != nil {
@@ -306,7 +452,14 @@ func InitHome(cfg config.Config) (string, error) {
 }
 
 func InspectProjectOwnership(projectDir string) (ProjectOwnershipReport, error) {
-	ws := projectWorkspace(projectDir)
+	ws := workspace{
+		RootDir:         projectDir,
+		StatePath:       StatePath(projectDir),
+		LocalConfigPath: LocalConfigPath(projectDir),
+		SkillsDir:       SkillsDir(projectDir),
+		ClaudeSkillsDir: ClaudeSkillsDir(projectDir),
+		CacheDir:        CacheDir(projectDir),
+	}
 	info, err := gitrepo.Discover(context.Background(), projectDir)
 	if err != nil {
 		return ProjectOwnershipReport{}, err
@@ -351,6 +504,7 @@ func InspectProjectArtifacts(projectDir string) (ArtifactReport, error) {
 	paths := []string{
 		ManifestPath(projectDir),
 		StatePath(projectDir),
+		LocalConfigPath(projectDir),
 		SkillsDir(projectDir),
 		ClaudeSkillsDir(projectDir),
 		CacheDir(projectDir),
@@ -506,7 +660,11 @@ func ProjectID(projectDir string) (string, error) {
 }
 
 func Status(ctx context.Context, projectDir string) (StatusReport, error) {
-	return statusWorkspace(ctx, projectWorkspace(projectDir))
+	ws, err := resolveProjectWorkspace(projectDir)
+	if err != nil {
+		return StatusReport{}, err
+	}
+	return statusWorkspace(ctx, ws)
 }
 
 func HomeStatus(ctx context.Context, cfg config.Config) (StatusReport, error) {
@@ -518,7 +676,11 @@ func HomeStatus(ctx context.Context, cfg config.Config) (StatusReport, error) {
 }
 
 func Sync(ctx context.Context, projectDir string, options SyncOptions) (SyncResult, error) {
-	return syncWorkspace(ctx, projectWorkspace(projectDir), options)
+	ws, err := resolveProjectWorkspace(projectDir)
+	if err != nil {
+		return SyncResult{}, err
+	}
+	return syncWorkspace(ctx, ws, options)
 }
 
 func HomeSync(ctx context.Context, cfg config.Config, options SyncOptions) (SyncResult, error) {
@@ -530,7 +692,11 @@ func HomeSync(ctx context.Context, cfg config.Config, options SyncOptions) (Sync
 }
 
 func Update(ctx context.Context, projectDir string, options UpdateOptions) (UpdateResult, error) {
-	return updateWorkspace(ctx, projectWorkspace(projectDir), options)
+	ws, err := resolveProjectWorkspace(projectDir)
+	if err != nil {
+		return UpdateResult{}, err
+	}
+	return updateWorkspace(ctx, ws, options)
 }
 
 func HomeUpdate(ctx context.Context, cfg config.Config, options UpdateOptions) (UpdateResult, error) {
@@ -541,18 +707,49 @@ func HomeUpdate(ctx context.Context, cfg config.Config, options UpdateOptions) (
 	return updateWorkspace(ctx, ws, options)
 }
 
-func projectWorkspace(projectDir string) workspace {
+func projectWorkspace(projectDir string, cacheMode CacheMode) (workspace, error) {
+	if cacheMode != CacheModeLocal && cacheMode != CacheModeGlobal {
+		return workspace{}, fmt.Errorf("invalid cache mode %q: use local or global", cacheMode)
+	}
+
+	repoRoot := RepoRoot(projectDir)
+	worktreeRoot := WorktreeRoot(projectDir)
+	if cacheMode == CacheModeGlobal {
+		cfg, err := loadGlobalConfig()
+		if err != nil {
+			return workspace{}, err
+		}
+		repoRoot, err = config.RepoRootPath(cfg)
+		if err != nil {
+			return workspace{}, err
+		}
+		worktreeRoot, err = config.WorktreeRootPath(cfg)
+		if err != nil {
+			return workspace{}, err
+		}
+	}
+
 	return workspace{
 		Name:            projectWorkspaceName,
 		RootDir:         projectDir,
 		ManifestPath:    ManifestPath(projectDir),
 		StatePath:       StatePath(projectDir),
+		LocalConfigPath: LocalConfigPath(projectDir),
 		SkillsDir:       SkillsDir(projectDir),
 		ClaudeSkillsDir: ClaudeSkillsDir(projectDir),
 		CacheDir:        CacheDir(projectDir),
-		RepoRoot:        RepoRoot(projectDir),
-		WorktreeRoot:    WorktreeRoot(projectDir),
+		RepoRoot:        repoRoot,
+		WorktreeRoot:    worktreeRoot,
+		CacheMode:       cacheMode,
+	}, nil
+}
+
+func resolveProjectWorkspace(projectDir string) (workspace, error) {
+	cacheConfig, err := LoadLocalConfig(projectDir)
+	if err != nil {
+		return workspace{}, err
 	}
+	return projectWorkspace(projectDir, cacheConfig.Mode)
 }
 
 func homeWorkspace(cfg config.Config) (workspace, error) {
@@ -585,6 +782,14 @@ func homeWorkspace(cfg config.Config) (workspace, error) {
 		WorktreeRoot:    worktreeRoot,
 		GlobalSources:   cfg.Sources,
 	}, nil
+}
+
+func loadGlobalConfig() (config.Config, error) {
+	configPath, err := config.DefaultConfigPath()
+	if err != nil {
+		return config.Config{}, err
+	}
+	return config.Load(configPath)
 }
 
 func statusWorkspace(ctx context.Context, ws workspace) (StatusReport, error) {
@@ -1608,6 +1813,7 @@ func validateManagedPathTypes(ws workspace) error {
 		label   string
 	}{
 		{path: ws.StatePath, wantDir: false, label: "state path"},
+		{path: ws.LocalConfigPath, wantDir: false, label: "local config path"},
 		{path: ws.SkillsDir, wantDir: true, label: "skills directory"},
 		{path: ws.ClaudeSkillsDir, wantDir: true, label: "Claude skills directory"},
 		{path: ws.CacheDir, wantDir: true, label: "cache directory"},
@@ -1636,7 +1842,7 @@ func validateManagedPathTypes(ws workspace) error {
 }
 
 func managedRuntimeIgnoreRules(ignoreBase string, ws workspace) ([]string, []string, error) {
-	managedPaths := []string{ws.StatePath, ws.SkillsDir, ws.ClaudeSkillsDir, ws.CacheDir}
+	managedPaths := []string{ws.StatePath, ws.LocalConfigPath, ws.SkillsDir, ws.ClaudeSkillsDir, ws.CacheDir}
 	rules := make([]string, 0, len(managedPaths))
 	pathspecs := make([]string, 0, len(managedPaths))
 

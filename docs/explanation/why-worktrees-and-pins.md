@@ -4,7 +4,10 @@ The project separates canonical source clones from project installs.
 
 ## Canonical Clones
 
-Project mode keeps one canonical local clone per source under `.agents/cache/repos`. Home/global mode keeps canonical clones under `repo_root`.
+Project installs always link from pinned worktrees, but the clone/worktree backend is selectable per repo user:
+
+- `cache.mode: local` keeps canonical clones under `.agents/cache/repos`
+- `cache.mode: global` uses the configured shared `repo_root`
 
 ## Project Pins
 
@@ -20,7 +23,8 @@ What exact content should this project install right now?
 
 The CLI materializes project content under a worktree root keyed by project identity, source alias, and commit:
 
-- project mode: `.agents/cache/worktrees`
+- project mode with local cache: `.agents/cache/worktrees`
+- project mode with global cache: `worktree_root`
 - home/global mode: `worktree_root`
 
 This avoids two common problems:

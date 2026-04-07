@@ -3,6 +3,7 @@
 This tutorial walks through the first successful `skills` workflow with a local Git repo. It uses the new standardized project layout:
 
 - `.agents/manifest.yaml`
+- `.agents/local.yaml`
 - `.agents/cache/`
 - `.agents/skills/`
 - `.claude/skills/`
@@ -62,7 +63,7 @@ cd /tmp/skills-tutorial
 ```bash
 mkdir -p project
 cd project
-$SKILLS_BIN init --project
+$SKILLS_BIN init --project --cache=local
 ```
 
 Edit `.agents/manifest.yaml`:
