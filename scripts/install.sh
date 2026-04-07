@@ -61,6 +61,14 @@ resolve_version() {
   printf '%s\n' "$latest"
 }
 
+normalize_asset_version() {
+  version="$1"
+  case "$version" in
+    v*) printf '%s\n' "${version#v}" ;;
+    *) printf '%s\n' "$version" ;;
+  esac
+}
+
 path_contains() {
   target="$1"
   old_ifs="${IFS:- }"
@@ -175,9 +183,10 @@ main() {
   os="$(detect_os)"
   arch="$(detect_arch)"
   version="$(resolve_version)"
+  asset_version="$(normalize_asset_version "$version")"
   install_dir="$(choose_install_dir)"
 
-  asset="${BINARY}_${version}_${os}_${arch}.tar.gz"
+  asset="${BINARY}_${asset_version}_${os}_${arch}.tar.gz"
   checksums_asset="${BINARY}_checksums.txt"
   release_base="https://github.com/$OWNER/$REPO/releases/download/$version"
 
