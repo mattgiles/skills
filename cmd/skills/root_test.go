@@ -149,6 +149,315 @@ func TestRepoSourceCommandsUseProjectManifest(t *testing.T) {
 	}
 }
 
+func TestAddCommandAddsSkillToExistingRepoSourceAndSyncs(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	resolvedProjectDir := resolvedPath(t, projectDir)
+	initGitRepo(t, projectDir)
+
+	remote := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
+		t.Fatalf("init error = %v, stderr = %s", err, stderr)
+	}
+	writeProjectManifest(t, projectDir, strings.Join([]string{
+		"sources:",
+		"  repo-one:",
+		"    url: " + remote,
+		"    ref: main",
+		"skills: []",
+		"",
+	}, "\n"))
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "add", "repo-one", "analytics")
+	if err != nil {
+		t.Fatalf("add error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, `added skill "analytics" from source "repo-one"`) {
+		t.Fatalf("stdout = %q", stdout)
+	}
+
+	manifestData, err := os.ReadFile(filepath.Join(projectDir, ".agents", "manifest.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile(manifest) error = %v", err)
+	}
+	if !strings.Contains(string(manifestData), "name: analytics") {
+		t.Fatalf("manifest missing skill entry:\n%s", string(manifestData))
+	}
+
+	canonicalPath := filepath.Join(resolvedProjectDir, ".agents", "skills", "analytics")
+	if _, err := os.Lstat(canonicalPath); err != nil {
+		t.Fatalf("expected canonical skill link %q: %v", canonicalPath, err)
+	}
+}
+
+func TestAddCommandAddsSkillToExistingGlobalSourceAndSyncs(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+
+	remote := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+
+	if _, stderr, err := executeCommand(t, env, "init", "--global"); err != nil {
+		t.Fatalf("init --global error = %v, stderr = %s", err, stderr)
+	}
+
+	manifestPath := filepath.Join(env.home, ".agents", "manifest.yaml")
+	mustWriteFile(t, manifestPath, strings.Join([]string{
+		"sources:",
+		"  repo-one:",
+		"    url: " + remote,
+		"    ref: main",
+		"skills: []",
+		"",
+	}, "\n"))
+
+	stdout, stderr, err := executeCommand(t, env, "add", "--global", "repo-one", "analytics")
+	if err != nil {
+		t.Fatalf("add --global error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, `added skill "analytics" from source "repo-one"`) {
+		t.Fatalf("stdout = %q", stdout)
+	}
+
+	manifestData, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("ReadFile(manifest) error = %v", err)
+	}
+	if !strings.Contains(string(manifestData), "name: analytics") {
+		t.Fatalf("manifest missing skill entry:\n%s", string(manifestData))
+	}
+
+	canonicalPath := filepath.Join(env.home, ".agents", "skills", "analytics")
+	if _, err := os.Lstat(canonicalPath); err != nil {
+		t.Fatalf("expected canonical skill link %q: %v", canonicalPath, err)
+	}
+}
+
+func TestAddCommandAddsNewRepoSourceWithExplicitRefAndSyncs(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	resolvedProjectDir := resolvedPath(t, projectDir)
+	initGitRepo(t, projectDir)
+
+	remote := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
+		t.Fatalf("init error = %v, stderr = %s", err, stderr)
+	}
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "add", "--url", remote, "--ref", "main", "repo-one", "analytics")
+	if err != nil {
+		t.Fatalf("add error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, `added source "repo-one" (`) {
+		t.Fatalf("stdout = %q", stdout)
+	}
+
+	manifestData, err := os.ReadFile(filepath.Join(projectDir, ".agents", "manifest.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile(manifest) error = %v", err)
+	}
+	for _, want := range []string{
+		"repo-one:",
+		"url: " + remote,
+		"ref: main",
+		"name: analytics",
+	} {
+		if !strings.Contains(string(manifestData), want) {
+			t.Fatalf("manifest missing %q:\n%s", want, string(manifestData))
+		}
+	}
+
+	canonicalPath := filepath.Join(resolvedProjectDir, ".agents", "skills", "analytics")
+	if _, err := os.Lstat(canonicalPath); err != nil {
+		t.Fatalf("expected canonical skill link %q: %v", canonicalPath, err)
+	}
+}
+
+func TestAddCommandInfersRefForNewGlobalSource(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+
+	remote := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+
+	if _, stderr, err := executeCommand(t, env, "init", "--global"); err != nil {
+		t.Fatalf("init --global error = %v, stderr = %s", err, stderr)
+	}
+
+	stdout, stderr, err := executeCommand(t, env, "add", "--global", "--url", remote, "repo-one", "analytics")
+	if err != nil {
+		t.Fatalf("add --global error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, `added source "repo-one" (`) {
+		t.Fatalf("stdout = %q", stdout)
+	}
+
+	manifestPath := filepath.Join(env.home, ".agents", "manifest.yaml")
+	manifestData, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("ReadFile(manifest) error = %v", err)
+	}
+	for _, want := range []string{
+		"url: " + remote,
+		"ref: main",
+		"name: analytics",
+	} {
+		if !strings.Contains(string(manifestData), want) {
+			t.Fatalf("manifest missing %q:\n%s", want, string(manifestData))
+		}
+	}
+
+	configPath := filepath.Join(env.configHome, "skills", "config.yaml")
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Fatalf("did not expect global config write, got err = %v", err)
+	}
+}
+
+func TestAddCommandNoOpsForDuplicateSkill(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
+
+	remote := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
+		t.Fatalf("init error = %v, stderr = %s", err, stderr)
+	}
+	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics"}))
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "add", "repo-one", "analytics")
+	if err != nil {
+		t.Fatalf("add error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, `skill "analytics" from source "repo-one" is already declared`) {
+		t.Fatalf("stdout = %q", stdout)
+	}
+
+	manifestData, err := os.ReadFile(filepath.Join(projectDir, ".agents", "manifest.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile(manifest) error = %v", err)
+	}
+	if strings.Count(string(manifestData), "name: analytics") != 1 {
+		t.Fatalf("manifest duplicated skill entry:\n%s", string(manifestData))
+	}
+
+	if _, err := os.Stat(filepath.Join(projectDir, ".agents", "state.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("did not expect sync state write, got err = %v", err)
+	}
+}
+
+func TestAddCommandRequiresURLForNewSourceBeforeWritingManifest(t *testing.T) {
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
+		t.Fatalf("init error = %v, stderr = %s", err, stderr)
+	}
+
+	manifestPath := filepath.Join(projectDir, ".agents", "manifest.yaml")
+	before, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("ReadFile(manifest) error = %v", err)
+	}
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "add", "repo-one", "analytics")
+	if err == nil {
+		t.Fatalf("expected add error, stdout = %s, stderr = %s", stdout, stderr)
+	}
+	if !strings.Contains(err.Error(), `source "repo-one" is not declared; --url is required`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	after, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("ReadFile(manifest) error = %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("manifest changed unexpectedly:\nbefore:\n%s\nafter:\n%s", string(before), string(after))
+	}
+}
+
+func TestAddCommandFailsOutsideRepo(t *testing.T) {
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "add", "repo-one", "analytics")
+	if err == nil {
+		t.Fatalf("expected add error, stdout = %s, stderr = %s", stdout, stderr)
+	}
+	if !strings.Contains(err.Error(), "outside a Git repo; use --global") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestAddCommandFailsWithoutRepoManifest(t *testing.T) {
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "add", "repo-one", "analytics")
+	if err == nil {
+		t.Fatalf("expected add error, stdout = %s, stderr = %s", stdout, stderr)
+	}
+	if !strings.Contains(err.Error(), "no repo manifest found") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestAddCommandRollsBackManifestOnSyncFailure(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
+
+	remote := initRemoteRepo(t, map[string]string{
+		"lint/SKILL.md": "# lint",
+	})
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
+		t.Fatalf("init error = %v, stderr = %s", err, stderr)
+	}
+
+	manifestPath := filepath.Join(projectDir, ".agents", "manifest.yaml")
+	original := strings.Join([]string{
+		"sources:",
+		"  repo-one: {url: " + remote + ", ref: main}",
+		"skills: []",
+		"",
+	}, "\n")
+	mustWriteFile(t, manifestPath, original)
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "add", "repo-one", "analytics")
+	if err == nil {
+		t.Fatalf("expected add error, stdout = %s, stderr = %s", stdout, stderr)
+	}
+	if !strings.Contains(err.Error(), "repo-one/analytics: missing-skill") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	after, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("ReadFile(manifest) error = %v", err)
+	}
+	if string(after) != original {
+		t.Fatalf("manifest rollback mismatch:\nwant:\n%s\ngot:\n%s", original, string(after))
+	}
+}
+
 func TestSkillListUsesRepoManifestSourcesByDefault(t *testing.T) {
 	requireGit(t)
 	env := newTestEnv(t)

@@ -27,6 +27,7 @@ func newRootCommand() *cobra.Command {
 
 	cmd.PersistentFlags().Bool("verbose", false, "Show detailed diagnostic output")
 
+	cmd.AddCommand(newAddCommand())
 	cmd.AddCommand(newInitCommand())
 	cmd.AddCommand(newStatusCommand())
 	cmd.AddCommand(newSyncCommand())
@@ -368,9 +369,12 @@ func loadConfig() (config.Config, error) {
 }
 
 type sourceManifestTarget struct {
+	Scope        commandScope
 	ManifestPath string
 	Manifest     project.Manifest
 	RepoRoot     string
+	ProjectRoot  string
+	Config       config.Config
 }
 
 func resolveSourceManifestTarget(global bool) (sourceManifestTarget, error) {
@@ -392,9 +396,11 @@ func resolveSourceManifestTarget(global bool) (sourceManifestTarget, error) {
 			return sourceManifestTarget{}, err
 		}
 		return sourceManifestTarget{
+			Scope:        scopeGlobal,
 			ManifestPath: manifestPath,
 			Manifest:     manifest,
 			RepoRoot:     repoRoot,
+			Config:       cfg,
 		}, nil
 	}
 
@@ -428,9 +434,11 @@ func resolveSourceManifestTarget(global bool) (sourceManifestTarget, error) {
 	}
 
 	return sourceManifestTarget{
+		Scope:        scopeRepo,
 		ManifestPath: project.ManifestPath(projectRoot),
 		Manifest:     manifest,
 		RepoRoot:     repoRoot,
+		ProjectRoot:  projectRoot,
 	}, nil
 }
 
