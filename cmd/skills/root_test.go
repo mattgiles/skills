@@ -121,6 +121,12 @@ func TestSourceSyncFetchesWithoutChangingHead(t *testing.T) {
 	if remoteTracking != remoteHead {
 		t.Fatalf("origin/main = %s, want %s", remoteTracking, remoteHead)
 	}
+
+	stdout, stderr, err := executeCommand(t, env, "source", "list")
+	if err != nil {
+		t.Fatalf("source list error = %v, stderr = %s", err, stderr)
+	}
+	assertOutputHasFields(t, stdout, "repo-one", "synced", "main@"+remoteHead[:12], "main@"+headBefore[:12])
 }
 
 func TestSkillListSkipsUnsyncedSource(t *testing.T) {
@@ -290,7 +296,7 @@ func TestProjectUpdateAndDryRunFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("project status error = %v, stderr = %s", err, statusErr)
 	}
-	assertOutputHasFields(t, statusOut, "repo-one", "update-available", "main", commitTwo[:12])
+	assertOutputHasFields(t, statusOut, "repo-one", "up-to-date", "main", commitOne[:12])
 	assertOutputHasFields(t, statusOut, "codex", "repo-one", "analytics", "linked", filepath.Join(resolvedProjectDir, "agent-skills", "analytics"))
 
 	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "update", "--dry-run")
@@ -303,6 +309,14 @@ func TestProjectUpdateAndDryRunFlow(t *testing.T) {
 	assertOutputHasFields(t, stdout, "repo-one", "updated", "main", commitTwo[:12])
 
 	linkPath := filepath.Join(resolvedProjectDir, "agent-skills", "analytics")
+
+	statusOut, statusErr, err = executeCommandInDir(t, env, projectDir, "project", "status")
+	if err != nil {
+		t.Fatalf("project status after dry-run error = %v, stderr = %s", err, statusErr)
+	}
+	assertOutputHasFields(t, statusOut, "repo-one", "update-available", "main", commitTwo[:12])
+	assertOutputHasFields(t, statusOut, "codex", "repo-one", "analytics", "linked", linkPath)
+
 	target, err := os.Readlink(linkPath)
 	if err != nil {
 		t.Fatalf("Readlink(%q) error = %v", linkPath, err)
@@ -354,6 +368,46 @@ func TestProjectUpdateAndDryRunFlow(t *testing.T) {
 	}
 	if !strings.Contains(target, commitTwo) {
 		t.Fatalf("sync should update link target to %s, got %q", commitTwo, target)
+	}
+}
+
+func TestProjectStatusReportsInspectFailure(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+
+	remote := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+	commit := gitOutput(t, remote, "rev-parse", "HEAD")
+
+	writeProjectManifest(t, projectDir, manifestFor(remote, map[string][]string{
+		"analytics": {"codex"},
+	}))
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "sync"); err != nil {
+		t.Fatalf("initial project sync error = %v, stderr = %s", err, stderr)
+	}
+
+	statePath := filepath.Join(projectDir, ".skills", "state.yaml")
+	stateData, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) error = %v", statePath, err)
+	}
+	replaced := strings.Replace(string(stateData), commit, "deadbeef", 1)
+	if err := os.WriteFile(statePath, []byte(replaced), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q) error = %v", statePath, err)
+	}
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "status")
+	if err != nil {
+		t.Fatalf("project status error = %v, stderr = %s", err, stderr)
+	}
+
+	assertOutputHasFields(t, stdout, "repo-one", "inspect-failed", "main", commit[:12])
+	assertOutputHasFields(t, stdout, "codex", "repo-one", "analytics", "inspect-failed")
+	if !strings.Contains(stdout, "deadbeef") {
+		t.Fatalf("status output missing underlying inspect error:\n%s", stdout)
 	}
 }
 

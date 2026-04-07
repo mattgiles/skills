@@ -134,13 +134,14 @@ func newSourceListCommand() *cobra.Command {
 			}
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "ALIAS\tSTATUS\tHEAD\tPATH\tURL")
+			fmt.Fprintln(w, "ALIAS\tSTATUS\tREMOTE\tLOCAL\tPATH\tURL")
 
 			for _, src := range sources {
 				status := source.Status(context.Background(), src)
 				state := renderSourceState(status)
-				head := renderHead(status)
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", src.Alias, state, head, src.RepoPath, src.URL)
+				remote := renderRemoteHead(status)
+				local := renderLocalHead(status)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", src.Alias, state, remote, local, src.RepoPath, src.URL)
 			}
 
 			return w.Flush()
@@ -347,12 +348,31 @@ func renderSourceState(status source.SourceStatus) string {
 			return "invalid"
 		}
 		return "invalid: " + status.LastError
-	default:
+	case status.DefaultRemoteCommit != "":
 		return "synced"
+	default:
+		return "cloned"
 	}
 }
 
-func renderHead(status source.SourceStatus) string {
+func renderRemoteHead(status source.SourceStatus) string {
+	if status.DefaultRemoteCommit == "" {
+		return "-"
+	}
+
+	commit := status.DefaultRemoteCommit
+	if len(commit) > 12 {
+		commit = commit[:12]
+	}
+
+	if strings.TrimSpace(status.DefaultRemoteRef) == "" {
+		return commit
+	}
+
+	return status.DefaultRemoteRef + "@" + commit
+}
+
+func renderLocalHead(status source.SourceStatus) string {
 	if status.HeadCommit == "" {
 		return "-"
 	}

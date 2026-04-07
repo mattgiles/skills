@@ -18,14 +18,16 @@ type Source struct {
 }
 
 type SourceStatus struct {
-	Alias      string
-	URL        string
-	RepoPath   string
-	Exists     bool
-	IsGitRepo  bool
-	HeadRef    string
-	HeadCommit string
-	LastError  string
+	Alias               string
+	URL                 string
+	RepoPath            string
+	Exists              bool
+	IsGitRepo           bool
+	HeadRef             string
+	HeadCommit          string
+	DefaultRemoteRef    string
+	DefaultRemoteCommit string
+	LastError           string
 }
 
 func RepoPath(repoRoot string, alias string) string {
@@ -88,6 +90,10 @@ func Status(ctx context.Context, src Source) SourceStatus {
 	}
 	status.HeadCommit = commit
 
+	defaultRef, defaultCommit := defaultRemoteStatus(ctx, src.RepoPath)
+	status.DefaultRemoteRef = defaultRef
+	status.DefaultRemoteCommit = defaultCommit
+
 	return status
 }
 
@@ -135,13 +141,7 @@ func fetch(ctx context.Context, src Source) error {
 }
 
 func ResolveCommit(ctx context.Context, src Source, ref string) (string, error) {
-	candidates := []string{
-		"refs/remotes/origin/" + ref,
-		"refs/tags/" + ref,
-		ref,
-	}
-
-	for _, candidate := range candidates {
+	for _, candidate := range resolveCommitCandidates(ref) {
 		commit, err := gitOutput(ctx, "", "-C", src.RepoPath, "rev-parse", candidate+"^{commit}")
 		if err == nil {
 			return commit, nil
@@ -149,6 +149,69 @@ func ResolveCommit(ctx context.Context, src Source, ref string) (string, error) 
 	}
 
 	return "", fmt.Errorf("could not resolve ref %q to a commit", ref)
+}
+
+func defaultRemoteStatus(ctx context.Context, repoPath string) (string, string) {
+	ref, err := gitOutput(ctx, "", "-C", repoPath, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
+	if err != nil {
+		return "", ""
+	}
+
+	commit, err := gitOutput(ctx, "", "-C", repoPath, "rev-parse", ref+"^{commit}")
+	if err != nil {
+		return "", ""
+	}
+
+	return strings.TrimPrefix(ref, "refs/remotes/origin/"), commit
+}
+
+func resolveCommitCandidates(ref string) []string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil
+	}
+
+	candidates := []string{}
+	seen := map[string]struct{}{}
+	add := func(candidate string) {
+		if candidate == "" {
+			return
+		}
+		if _, ok := seen[candidate]; ok {
+			return
+		}
+		seen[candidate] = struct{}{}
+		candidates = append(candidates, candidate)
+	}
+
+	if looksLikeCommit(ref) {
+		add(ref)
+	}
+	if strings.HasPrefix(ref, "refs/") {
+		add(ref)
+	}
+
+	add("refs/remotes/origin/" + ref)
+	add("refs/tags/" + ref)
+	add(ref)
+
+	return candidates
+}
+
+func looksLikeCommit(ref string) bool {
+	if len(ref) < 7 || len(ref) > 40 {
+		return false
+	}
+	for _, r := range ref {
+		switch {
+		case r >= '0' && r <= '9':
+		case r >= 'a' && r <= 'f':
+		case r >= 'A' && r <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func ListFilesAtCommit(ctx context.Context, src Source, commit string) ([]string, error) {

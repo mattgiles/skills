@@ -132,6 +132,7 @@ type resolvedSource struct {
 	CurrentCommit string
 	DesiredCommit string
 	WorktreePath  string
+	InspectError  string
 	SkillsByName  map[string][]discovery.DiscoveredSkill
 }
 
@@ -591,14 +592,11 @@ func resolveSourcesForStatus(ctx context.Context, resolvedSources map[string]*re
 		prev, hasPrev := stateSources[src.Alias]
 		src.StoredCommit = prev.ResolvedCommit
 
-		status, err := ensureSourceAvailable(ctx, src, false, true)
+		status := inspectSource(ctx, src)
 		report := SourceReport{
 			Alias:          src.Alias,
 			Ref:            src.Ref,
 			PreviousCommit: shortCommit(prev.ResolvedCommit),
-		}
-		if err != nil {
-			return nil, err
 		}
 
 		switch {
@@ -637,9 +635,16 @@ func resolveSourcesForStatus(ctx context.Context, resolvedSources map[string]*re
 		}
 
 		setDesiredCommitForStatus(src, hasPrev, prev)
-		if strings.TrimSpace(src.DesiredCommit) != "" {
+		if status.Exists && status.IsGitRepo && strings.TrimSpace(src.DesiredCommit) != "" {
 			src.WorktreePath = source.WorktreePath(src.WorktreeRoot, src.ProjectID, src.Alias, src.DesiredCommit)
-			src.SkillsByName = loadSkillsForCommit(ctx, src)
+			skillsByName, inspectErr := loadSkillsForCommit(ctx, src)
+			if inspectErr != nil {
+				src.InspectError = inspectErr.Error()
+				report.Status = "inspect-failed"
+				report.Message = inspectErr.Error()
+			} else {
+				src.SkillsByName = skillsByName
+			}
 		}
 
 		reports = append(reports, report)
@@ -656,7 +661,7 @@ func resolveSourcesForSync(ctx context.Context, resolvedSources map[string]*reso
 		prev, hasPrev := stateSources[src.Alias]
 		src.StoredCommit = prev.ResolvedCommit
 
-		status, err := ensureSourceAvailable(ctx, src, true, true)
+		status, err := ensureSourceReady(ctx, src, true, true)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -702,9 +707,16 @@ func resolveSourcesForSync(ctx context.Context, resolvedSources map[string]*reso
 			}
 		}
 
-		if strings.TrimSpace(src.DesiredCommit) != "" {
+		if status.Exists && status.IsGitRepo && strings.TrimSpace(src.DesiredCommit) != "" {
 			src.WorktreePath = source.WorktreePath(src.WorktreeRoot, src.ProjectID, src.Alias, src.DesiredCommit)
-			src.SkillsByName = loadSkillsForCommit(ctx, src)
+			skillsByName, inspectErr := loadSkillsForCommit(ctx, src)
+			if inspectErr != nil {
+				src.InspectError = inspectErr.Error()
+				report.Status = "inspect-failed"
+				report.Message = inspectErr.Error()
+			} else {
+				src.SkillsByName = skillsByName
+			}
 			nextStates = append(nextStates, ProjectSourceState{
 				Source:         src.Alias,
 				Ref:            src.Ref,
@@ -729,7 +741,7 @@ func resolveSourcesForUpdate(ctx context.Context, resolvedSources map[string]*re
 	for _, src := range sortedResolvedSources(resolvedSources) {
 		prev, hasPrev := stateSources[src.Alias]
 
-		status, err := ensureSourceAvailable(ctx, src, true, true)
+		status, err := ensureSourceReady(ctx, src, true, true)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -790,14 +802,22 @@ func resolveSourcesForUpdate(ctx context.Context, resolvedSources map[string]*re
 	return reports, nextStates, nil
 }
 
-func ensureSourceAvailable(ctx context.Context, src *resolvedSource, cloneMissing bool, fetchExisting bool) (source.SourceStatus, error) {
+func inspectSource(ctx context.Context, src *resolvedSource) source.SourceStatus {
+	return source.Status(ctx, source.Source{
+		Alias:    src.Alias,
+		URL:      src.URL,
+		RepoPath: src.RepoPath,
+	})
+}
+
+func ensureSourceReady(ctx context.Context, src *resolvedSource, cloneMissing bool, fetchExisting bool) (source.SourceStatus, error) {
 	srcDef := source.Source{
 		Alias:    src.Alias,
 		URL:      src.URL,
 		RepoPath: src.RepoPath,
 	}
 
-	status := source.Status(ctx, srcDef)
+	status := inspectSource(ctx, src)
 	if !status.Exists {
 		if !cloneMissing {
 			return status, nil
@@ -805,7 +825,7 @@ func ensureSourceAvailable(ctx context.Context, src *resolvedSource, cloneMissin
 		if _, err := source.Sync(ctx, srcDef); err != nil {
 			return source.SourceStatus{}, fmt.Errorf("sync source %s: %w", src.Alias, err)
 		}
-		return source.Status(ctx, srcDef), nil
+		return inspectSource(ctx, src), nil
 	}
 
 	if !status.IsGitRepo {
@@ -816,7 +836,7 @@ func ensureSourceAvailable(ctx context.Context, src *resolvedSource, cloneMissin
 		if _, err := source.Sync(ctx, srcDef); err != nil {
 			return source.SourceStatus{}, fmt.Errorf("sync source %s: %w", src.Alias, err)
 		}
-		return source.Status(ctx, srcDef), nil
+		return inspectSource(ctx, src), nil
 	}
 
 	return status, nil
@@ -833,10 +853,10 @@ func setDesiredCommitForStatus(src *resolvedSource, hasPrev bool, prev ProjectSo
 	}
 }
 
-func loadSkillsForCommit(ctx context.Context, src *resolvedSource) map[string][]discovery.DiscoveredSkill {
+func loadSkillsForCommit(ctx context.Context, src *resolvedSource) (map[string][]discovery.DiscoveredSkill, error) {
 	skillsByName := map[string][]discovery.DiscoveredSkill{}
 	if strings.TrimSpace(src.DesiredCommit) == "" {
-		return skillsByName
+		return skillsByName, nil
 	}
 
 	paths, err := source.ListFilesAtCommit(ctx, source.Source{
@@ -845,13 +865,13 @@ func loadSkillsForCommit(ctx context.Context, src *resolvedSource) map[string][]
 		RepoPath: src.RepoPath,
 	}, src.DesiredCommit)
 	if err != nil {
-		return skillsByName
+		return nil, fmt.Errorf("inspect %s at %s: %w", src.Alias, shortCommit(src.DesiredCommit), err)
 	}
 
 	for _, skill := range discovery.DiscoverFromPaths(src.Alias, src.WorktreePath, paths) {
 		skillsByName[skill.Name] = append(skillsByName[skill.Name], skill)
 	}
-	return skillsByName
+	return skillsByName, nil
 }
 
 func buildLinkReports(resolvedSources map[string]*resolvedSource, agents map[string]resolvedAgent, manifest Manifest, stateLinks map[string]ManagedLink, forSync bool) ([]desiredLink, []LinkReport) {
@@ -875,6 +895,9 @@ func buildLinkReports(resolvedSources map[string]*resolvedSource, agents map[str
 				report.Message = "source is not declared"
 			case strings.TrimSpace(src.DesiredCommit) == "":
 				report.Status = "source-not-ready"
+			case strings.TrimSpace(src.InspectError) != "":
+				report.Status = "inspect-failed"
+				report.Message = src.InspectError
 			default:
 				matches := src.SkillsByName[skill.Name]
 				switch {
@@ -1030,8 +1053,12 @@ func fatalSourceReports(reports []SourceReport) error {
 	problems := make([]string, 0)
 	for _, report := range reports {
 		switch report.Status {
-		case "missing-source", "invalid-source", "invalid-ref":
-			problems = append(problems, fmt.Sprintf("%s: %s", report.Alias, report.Status))
+		case "missing-source", "invalid-source", "invalid-ref", "inspect-failed":
+			problem := fmt.Sprintf("%s: %s", report.Alias, report.Status)
+			if report.Message != "" {
+				problem += " (" + report.Message + ")"
+			}
+			problems = append(problems, problem)
 		}
 	}
 	if len(problems) == 0 {
@@ -1044,8 +1071,12 @@ func fatalLinkReports(reports []LinkReport) error {
 	problems := make([]string, 0)
 	for _, report := range reports {
 		switch report.Status {
-		case "unknown-source", "source-not-ready", "missing-skill", "ambiguous-skill", "conflict":
-			problems = append(problems, fmt.Sprintf("%s/%s/%s: %s", report.Agent, report.Source, report.Skill, report.Status))
+		case "unknown-source", "source-not-ready", "inspect-failed", "missing-skill", "ambiguous-skill", "conflict":
+			problem := fmt.Sprintf("%s/%s/%s: %s", report.Agent, report.Source, report.Skill, report.Status)
+			if report.Message != "" {
+				problem += " (" + report.Message + ")"
+			}
+			problems = append(problems, problem)
 		}
 	}
 	if len(problems) == 0 {
