@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/mattgiles/skills/internal/config"
@@ -279,33 +278,6 @@ func loadAndValidateConfig(report *Report, configPath string) (config.Config, bo
 			Hint:     "set shared_skills_dir and shared_claude_skills_dir to separate directories",
 			Path:     configPaths.sharedSkills,
 		})
-	}
-
-	aliases := make([]string, 0, len(cfg.Sources))
-	for alias := range cfg.Sources {
-		aliases = append(aliases, alias)
-	}
-	sort.Strings(aliases)
-
-	for _, alias := range aliases {
-		if err := config.ValidateAlias(alias); err != nil {
-			report.addFinding(Finding{
-				Section:  SectionConfig,
-				Severity: SeverityError,
-				Code:     "invalid-source-alias",
-				Subject:  alias,
-				Message:  err.Error(),
-			})
-		}
-		if strings.TrimSpace(cfg.Sources[alias].URL) == "" {
-			report.addFinding(Finding{
-				Section:  SectionConfig,
-				Severity: SeverityError,
-				Code:     "missing-source-url",
-				Subject:  alias,
-				Message:  "configured source is missing a URL",
-			})
-		}
 	}
 
 	return cfg, onlySectionErrors(report, SectionConfig) == 0, configPaths

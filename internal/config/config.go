@@ -14,15 +14,10 @@ import (
 var aliasPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
 type Config struct {
-	RepoRoot              string                  `yaml:"repo_root,omitempty"`
-	WorktreeRoot          string                  `yaml:"worktree_root,omitempty"`
-	SharedSkillsDir       string                  `yaml:"shared_skills_dir,omitempty"`
-	SharedClaudeSkillsDir string                  `yaml:"shared_claude_skills_dir,omitempty"`
-	Sources               map[string]SourceConfig `yaml:"sources,omitempty"`
-}
-
-type SourceConfig struct {
-	URL string `yaml:"url"`
+	RepoRoot              string `yaml:"repo_root,omitempty"`
+	WorktreeRoot          string `yaml:"worktree_root,omitempty"`
+	SharedSkillsDir       string `yaml:"shared_skills_dir,omitempty"`
+	SharedClaudeSkillsDir string `yaml:"shared_claude_skills_dir,omitempty"`
 }
 
 func DefaultConfig() Config {
@@ -31,7 +26,6 @@ func DefaultConfig() Config {
 		WorktreeRoot:          defaultWorktreeRootValue(),
 		SharedSkillsDir:       "~/.agents/skills",
 		SharedClaudeSkillsDir: "~/.claude/skills",
-		Sources:               map[string]SourceConfig{},
 	}
 }
 
@@ -168,9 +162,6 @@ func ensureDefaults(cfg *Config) {
 	}
 	if cfg.SharedClaudeSkillsDir == "" {
 		cfg.SharedClaudeSkillsDir = DefaultConfig().SharedClaudeSkillsDir
-	}
-	if cfg.Sources == nil {
-		cfg.Sources = map[string]SourceConfig{}
 	}
 }
 

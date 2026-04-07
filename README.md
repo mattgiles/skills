@@ -151,16 +151,16 @@ Create or inspect global config when you want to customize storage roots or shar
 skills config init
 ```
 
-Register a source alias in global config:
+Declare a source in the shared home manifest:
 
 ```bash
-skills source add repo-one git@github.com:example/repo-one.git
+skills source add --global --ref main repo-one git@github.com:example/repo-one.git
 ```
 
 Sync the canonical local source clone:
 
 ```bash
-skills source sync
+skills source sync --global
 ```
 
 Edit `~/.agents/manifest.yaml`:
@@ -168,6 +168,7 @@ Edit `~/.agents/manifest.yaml`:
 ```yaml
 sources:
   repo-one:
+    url: git@github.com:example/repo-one.git
     ref: main
 
 skills:

@@ -93,6 +93,12 @@ skills source sync
 
 or re-run the relevant sync command.
 
+For shared home/global sources:
+
+```bash
+skills source sync --global
+```
+
 ## `invalid-ref`
 
 Cause:

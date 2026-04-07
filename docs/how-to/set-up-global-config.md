@@ -1,6 +1,6 @@
 # Set Up Global Config
 
-Use global config for machine-level defaults: canonical clone storage, worktree storage, shared home install roots, and registered sources.
+Use global config for machine-level defaults: canonical clone storage, worktree storage, and shared home install roots.
 
 ## Create The Default Config
 
@@ -20,7 +20,6 @@ repo_root: ~/.local/share/skills/repos
 worktree_root: ~/.local/share/skills/worktrees
 shared_skills_dir: ~/.agents/skills
 shared_claude_skills_dir: ~/.claude/skills
-sources: {}
 ```
 
 If `SKILLS_DATA_HOME` is set, the default `repo_root` and `worktree_root` move under that directory instead.

@@ -27,11 +27,11 @@ skills
 ├── config
 │   └── init
 ├── source
-│   ├── add <alias> <git-url>
-│   ├── list
-│   └── sync [alias...]
+│   ├── add <alias> <git-url> [--ref <ref>] [--global]
+│   ├── list [--global]
+│   └── sync [alias...] [--global]
 ├── skill
-│   └── list [--source <alias>]
+│   └── list [--global] [--source <alias>]
 └── version
 ```
 
@@ -90,11 +90,24 @@ Behavior:
 
 ## `skills source add <alias> <git-url>`
 
-Registers a source under an alias in the global config.
+Registers a source under an alias in the active manifest.
+
+Flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--ref <ref>` | Source ref to store in the manifest; defaults to the remote's default branch |
+| `--global` | Write to the shared home manifest instead of the current repo manifest |
 
 ## `skills source list`
 
-Lists configured sources.
+Lists sources declared in the active manifest.
+
+Flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--global` | List sources from the shared home manifest instead of the current repo manifest |
 
 Default columns:
 
@@ -114,13 +127,19 @@ Verbose-only columns:
 
 ## `skills source sync [alias...]`
 
-Clones missing sources and fetches existing ones.
+Clones missing sources and fetches existing ones from the active manifest.
+
+Flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--global` | Sync sources from the shared home manifest instead of the current repo manifest |
 
 ## `skills skill list`
 
 Lists discovered skills from synced source repos.
 
-By default it uses the current repo manifest sources. Use `--global` to inspect the shared global source registry instead.
+By default it uses the current repo manifest sources. Use `--global` to inspect the shared home manifest instead.
 
 Flags:
 

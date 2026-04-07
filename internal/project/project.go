@@ -181,7 +181,6 @@ type workspace struct {
 	CacheDir        string
 	RepoRoot        string
 	WorktreeRoot    string
-	GlobalSources   map[string]config.SourceConfig
 	CacheMode       CacheMode
 	LocalConfigPath string
 }
@@ -780,7 +779,6 @@ func homeWorkspace(cfg config.Config) (workspace, error) {
 		ClaudeSkillsDir: claudeDir,
 		RepoRoot:        repoRoot,
 		WorktreeRoot:    worktreeRoot,
-		GlobalSources:   cfg.Sources,
 	}, nil
 }
 
@@ -1132,11 +1130,7 @@ func resolveInputs(ws workspace, manifest Manifest) (map[string]*resolvedSource,
 			if ws.Name == projectWorkspaceName {
 				return nil, fmt.Errorf("source %q has no URL in project manifest", alias)
 			}
-			globalSource, hasGlobal := ws.GlobalSources[alias]
-			if !hasGlobal || strings.TrimSpace(globalSource.URL) == "" {
-				return nil, fmt.Errorf("source %q has no URL in manifest or global config", alias)
-			}
-			url = globalSource.URL
+			return nil, fmt.Errorf("source %q has no URL in home manifest", alias)
 		}
 
 		resolvedSources[alias] = &resolvedSource{

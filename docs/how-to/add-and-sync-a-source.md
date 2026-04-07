@@ -1,11 +1,17 @@
 # Add And Sync A Source
 
-Use source commands to register a Git repo under an alias and keep a canonical local clone up to date.
+Use source commands to declare a Git repo under an alias in the active manifest and keep a canonical local clone up to date.
 
 ## Register A Source
 
 ```bash
-skills source add repo-one git@github.com:example/repo-one.git
+skills source add --ref main repo-one git@github.com:example/repo-one.git
+```
+
+For shared home/global sources:
+
+```bash
+skills source add --global --ref main repo-one git@github.com:example/repo-one.git
 ```
 
 Alias rules:
@@ -17,6 +23,12 @@ Alias rules:
 
 ```bash
 skills source list
+```
+
+Or for the shared home manifest:
+
+```bash
+skills source list --global
 ```
 
 Typical states:
@@ -38,6 +50,7 @@ This clones missing sources and fetches existing ones.
 
 ```bash
 skills source sync repo-one repo-two
+skills source sync --global repo-one repo-two
 ```
 
 ## Inspect More Detail

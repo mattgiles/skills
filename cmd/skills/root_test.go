@@ -14,10 +14,14 @@ import (
 	"github.com/mattgiles/skills/internal/selfupdate"
 )
 
-func TestSourceAddPersistsConfig(t *testing.T) {
+func TestSourceAddGlobalPersistsHomeManifest(t *testing.T) {
 	env := newTestEnv(t)
 
-	stdout, stderr, err := executeCommand(t, env, "source", "add", "dbt-agent-skills", "https://github.com/dbt-labs/dbt-agent-skills.git")
+	if _, stderr, err := executeCommand(t, env, "init", "--global"); err != nil {
+		t.Fatalf("init --global error = %v, stderr = %s", err, stderr)
+	}
+
+	stdout, stderr, err := executeCommand(t, env, "source", "add", "--global", "--ref", "main", "dbt-agent-skills", "https://github.com/dbt-labs/dbt-agent-skills.git")
 	if err != nil {
 		t.Fatalf("executeCommand() error = %v, stderr = %s", err, stderr)
 	}
@@ -26,18 +30,18 @@ func TestSourceAddPersistsConfig(t *testing.T) {
 		t.Fatalf("stdout = %q", stdout)
 	}
 
-	configPath := filepath.Join(env.configHome, "skills", "config.yaml")
-	data, err := os.ReadFile(configPath)
+	manifestPath := filepath.Join(env.home, ".agents", "manifest.yaml")
+	data, err := os.ReadFile(manifestPath)
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
 
-	if !strings.Contains(string(data), "dbt-agent-skills") {
-		t.Fatalf("config file missing source entry: %s", string(data))
+	if !strings.Contains(string(data), "dbt-agent-skills") || !strings.Contains(string(data), "url: https://github.com/dbt-labs/dbt-agent-skills.git") {
+		t.Fatalf("home manifest missing source entry: %s", string(data))
 	}
 }
 
-func TestSourceSyncClonesAndSkillListAggregates(t *testing.T) {
+func TestSourceSyncClonesAndSkillListAggregatesInGlobalScope(t *testing.T) {
 	requireGit(t)
 	env := newTestEnv(t)
 
@@ -55,16 +59,20 @@ func TestSourceSyncClonesAndSkillListAggregates(t *testing.T) {
 		},
 	)
 
-	_, stderr, err := executeCommand(t, env, "source", "add", "repo-one", remoteOne)
+	if _, stderr, err := executeCommand(t, env, "init", "--global"); err != nil {
+		t.Fatalf("init --global error = %v, stderr = %s", err, stderr)
+	}
+
+	_, stderr, err := executeCommand(t, env, "source", "add", "--global", "--ref", "main", "repo-one", remoteOne)
 	if err != nil {
 		t.Fatalf("add repo-one error = %v, stderr = %s", err, stderr)
 	}
-	_, stderr, err = executeCommand(t, env, "source", "add", "repo-two", remoteTwo)
+	_, stderr, err = executeCommand(t, env, "source", "add", "--global", "--ref", "main", "repo-two", remoteTwo)
 	if err != nil {
 		t.Fatalf("add repo-two error = %v, stderr = %s", err, stderr)
 	}
 
-	stdout, stderr, err := executeCommand(t, env, "source", "sync")
+	stdout, stderr, err := executeCommand(t, env, "source", "sync", "--global")
 	if err != nil {
 		t.Fatalf("sync error = %v, stderr = %s", err, stderr)
 	}
@@ -85,7 +93,11 @@ func TestSourceSyncClonesAndSkillListAggregates(t *testing.T) {
 func TestSkillListSkipsUnsyncedSource(t *testing.T) {
 	env := newTestEnv(t)
 
-	_, stderr, err := executeCommand(t, env, "source", "add", "repo-one", "/tmp/does-not-matter.git")
+	if _, stderr, err := executeCommand(t, env, "init", "--global"); err != nil {
+		t.Fatalf("init --global error = %v, stderr = %s", err, stderr)
+	}
+
+	_, stderr, err := executeCommand(t, env, "source", "add", "--global", "--ref", "main", "repo-one", "/tmp/does-not-matter.git")
 	if err != nil {
 		t.Fatalf("add source error = %v, stderr = %s", err, stderr)
 	}
@@ -100,6 +112,40 @@ func TestSkillListSkipsUnsyncedSource(t *testing.T) {
 	}
 	if !strings.Contains(stderr, `warning: skipping unsynced source "repo-one"`) {
 		t.Fatalf("stderr = %q", stderr)
+	}
+}
+
+func TestRepoSourceCommandsUseProjectManifest(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
+
+	remote := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
+		t.Fatalf("init error = %v, stderr = %s", err, stderr)
+	}
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "source", "add", "--ref", "main", "repo-one", remote); err != nil {
+		t.Fatalf("source add error = %v, stderr = %s", err, stderr)
+	}
+
+	manifestData, err := os.ReadFile(filepath.Join(projectDir, ".agents", "manifest.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile(manifest) error = %v", err)
+	}
+	if !strings.Contains(string(manifestData), "repo-one:") || !strings.Contains(string(manifestData), "url: "+remote) {
+		t.Fatalf("manifest missing source entry:\n%s", string(manifestData))
+	}
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "source", "sync")
+	if err != nil {
+		t.Fatalf("source sync error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "cloned\trepo-one") {
+		t.Fatalf("sync stdout = %q", stdout)
 	}
 }
 

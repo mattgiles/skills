@@ -86,6 +86,22 @@ func TestResolveCommitPrefersRemoteBranchOverTag(t *testing.T) {
 	}
 }
 
+func TestInferDefaultRef(t *testing.T) {
+	requireGit(t)
+
+	remote := initRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+
+	got, err := InferDefaultRef(context.Background(), remote)
+	if err != nil {
+		t.Fatalf("InferDefaultRef() error = %v", err)
+	}
+	if got != "main" {
+		t.Fatalf("InferDefaultRef() = %q, want main", got)
+	}
+}
+
 func TestSyncFetchesRemoteWithoutChangingLocalHead(t *testing.T) {
 	requireGit(t)
 

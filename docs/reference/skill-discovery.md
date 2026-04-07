@@ -19,7 +19,7 @@ There are two discovery modes in the current implementation:
 
 - `skills skill list` scans the checked-out canonical source repo for the active scope:
   - repo mode uses sources from `.agents/manifest.yaml`
-  - `--global` uses sources from the global source registry
+  - `--global` uses sources from `~/.agents/manifest.yaml`
 - project workflows inspect the file list for the resolved commit and map the discovered relative paths into the project's worktree
 
 ## Consequences

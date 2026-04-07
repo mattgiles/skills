@@ -92,11 +92,18 @@ func newSourceCommand() *cobra.Command {
 }
 
 func newSourceAddCommand() *cobra.Command {
-	return &cobra.Command{
+	var global bool
+	var ref string
+
+	cmd := &cobra.Command{
 		Use:   "add <alias> <git-url>",
 		Short: "Register a skill source",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := source.EnsureGitAvailable(); err != nil {
+				return err
+			}
+
 			alias := args[0]
 			url := args[1]
 
@@ -104,19 +111,33 @@ func newSourceAddCommand() *cobra.Command {
 				return err
 			}
 
-			configPath, err := config.DefaultConfigPath()
+			target, err := resolveSourceManifestTarget(global)
+			if err != nil {
+				return err
+			}
+			manifest, err := project.LoadManifestAt(target.ManifestPath)
 			if err != nil {
 				return err
 			}
 
-			cfg, err := config.Load(configPath)
-			if err != nil {
-				return err
+			sourceRef := strings.TrimSpace(ref)
+			if sourceRef == "" {
+				if existing, ok := manifest.Sources[alias]; ok && strings.TrimSpace(existing.Ref) != "" {
+					sourceRef = existing.Ref
+				} else {
+					sourceRef, err = source.InferDefaultRef(context.Background(), url)
+					if err != nil {
+						return fmt.Errorf("infer default ref for %s: %w", alias, err)
+					}
+				}
 			}
 
-			cfg.Sources[alias] = config.SourceConfig{URL: url}
+			manifest.Sources[alias] = project.ManifestSource{
+				URL: url,
+				Ref: sourceRef,
+			}
 
-			if err := config.Save(configPath, cfg); err != nil {
+			if err := project.SaveManifestAt(target.ManifestPath, manifest); err != nil {
 				return err
 			}
 
@@ -124,19 +145,23 @@ func newSourceAddCommand() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&global, "global", false, "Operate on shared home/global sources")
+	cmd.Flags().StringVar(&ref, "ref", "", "Source ref to store in the manifest; defaults to the remote's default branch")
+	return cmd
 }
 
 func newSourceListCommand() *cobra.Command {
-	return &cobra.Command{
+	var global bool
+
+	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List configured sources",
+		Short: "List declared sources",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, repoRoot, err := loadConfigAndRepoRoot()
+			sources, err := resolveManifestSources(global, nil)
 			if err != nil {
 				return err
 			}
-
-			sources := configuredSources(cfg, repoRoot)
 			if len(sources) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "no sources configured")
 				return nil
@@ -164,23 +189,23 @@ func newSourceListCommand() *cobra.Command {
 			return w.Flush()
 		},
 	}
+
+	cmd.Flags().BoolVar(&global, "global", false, "Operate on shared home/global sources")
+	return cmd
 }
 
 func newSourceSyncCommand() *cobra.Command {
-	return &cobra.Command{
+	var global bool
+
+	cmd := &cobra.Command{
 		Use:   "sync [alias...]",
-		Short: "Clone or fetch configured sources",
+		Short: "Clone or fetch declared sources",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := source.EnsureGitAvailable(); err != nil {
 				return err
 			}
 
-			cfg, repoRoot, err := loadConfigAndRepoRoot()
-			if err != nil {
-				return err
-			}
-
-			selected, err := selectSources(cfg, repoRoot, args)
+			selected, err := resolveManifestSources(global, args)
 			if err != nil {
 				return err
 			}
@@ -245,6 +270,9 @@ func newSourceSyncCommand() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&global, "global", false, "Operate on shared home/global sources")
+	return cmd
 }
 
 func newSkillCommand() *cobra.Command {
@@ -324,90 +352,11 @@ func newSkillCommand() *cobra.Command {
 }
 
 func skillListSources(global bool, sourceAlias string) ([]source.Source, error) {
-	if global {
-		cfg, repoRoot, err := loadConfigAndRepoRoot()
-		if err != nil {
-			return nil, err
-		}
-
-		aliases := []string{}
-		if sourceAlias != "" {
-			aliases = append(aliases, sourceAlias)
-		}
-		return selectSources(cfg, repoRoot, aliases)
+	aliases := []string{}
+	if sourceAlias != "" {
+		aliases = append(aliases, sourceAlias)
 	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-	projectRoot, err := resolveRepoRoot(cwd, true)
-	if err != nil {
-		return nil, err
-	}
-
-	manifest, err := project.LoadManifest(projectRoot)
-	if err != nil {
-		return nil, err
-	}
-	cacheConfig, err := project.LoadLocalConfig(projectRoot)
-	if err != nil {
-		return nil, err
-	}
-
-	repoRoot := project.RepoRoot(projectRoot)
-	if cacheConfig.Mode == project.CacheModeGlobal {
-		cfg, err := loadConfig()
-		if err != nil {
-			return nil, err
-		}
-		repoRoot, err = config.RepoRootPath(cfg)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	aliases := make([]string, 0, len(manifest.Sources))
-	for alias := range manifest.Sources {
-		if sourceAlias != "" && alias != sourceAlias {
-			continue
-		}
-		aliases = append(aliases, alias)
-	}
-	sort.Strings(aliases)
-
-	if sourceAlias != "" && len(aliases) == 0 {
-		return nil, fmt.Errorf("unknown source %q", sourceAlias)
-	}
-
-	selected := make([]source.Source, 0, len(aliases))
-	for _, alias := range aliases {
-		entry := manifest.Sources[alias]
-		if strings.TrimSpace(entry.URL) == "" {
-			return nil, fmt.Errorf("source %q has no URL in repo manifest", alias)
-		}
-		selected = append(selected, source.Source{
-			Alias:    alias,
-			URL:      entry.URL,
-			RepoPath: source.RepoPath(repoRoot, alias),
-		})
-	}
-
-	return selected, nil
-}
-
-func loadConfigAndRepoRoot() (config.Config, string, error) {
-	cfg, err := loadConfig()
-	if err != nil {
-		return config.Config{}, "", err
-	}
-
-	repoRoot, err := config.RepoRootPath(cfg)
-	if err != nil {
-		return config.Config{}, "", err
-	}
-
-	return cfg, repoRoot, nil
+	return resolveManifestSources(global, aliases)
 }
 
 func loadConfig() (config.Config, error) {
@@ -418,32 +367,96 @@ func loadConfig() (config.Config, error) {
 	return config.Load(configPath)
 }
 
-func configuredSources(cfg config.Config, repoRoot string) []source.Source {
-	aliases := make([]string, 0, len(cfg.Sources))
-	for alias := range cfg.Sources {
-		aliases = append(aliases, alias)
-	}
-	sort.Strings(aliases)
-
-	sources := make([]source.Source, 0, len(aliases))
-	for _, alias := range aliases {
-		sources = append(sources, source.Source{
-			Alias:    alias,
-			URL:      cfg.Sources[alias].URL,
-			RepoPath: source.RepoPath(repoRoot, alias),
-		})
-	}
-
-	return sources
+type sourceManifestTarget struct {
+	ManifestPath string
+	Manifest     project.Manifest
+	RepoRoot     string
 }
 
-func selectSources(cfg config.Config, repoRoot string, aliases []string) ([]source.Source, error) {
+func resolveSourceManifestTarget(global bool) (sourceManifestTarget, error) {
+	if global {
+		cfg, err := loadConfig()
+		if err != nil {
+			return sourceManifestTarget{}, err
+		}
+		manifestPath, err := project.HomeManifestPath(cfg)
+		if err != nil {
+			return sourceManifestTarget{}, err
+		}
+		manifest, err := project.LoadManifestAt(manifestPath)
+		if err != nil {
+			return sourceManifestTarget{}, err
+		}
+		repoRoot, err := config.RepoRootPath(cfg)
+		if err != nil {
+			return sourceManifestTarget{}, err
+		}
+		return sourceManifestTarget{
+			ManifestPath: manifestPath,
+			Manifest:     manifest,
+			RepoRoot:     repoRoot,
+		}, nil
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return sourceManifestTarget{}, err
+	}
+	projectRoot, err := resolveRepoRoot(cwd, true)
+	if err != nil {
+		return sourceManifestTarget{}, err
+	}
+	manifest, err := project.LoadManifest(projectRoot)
+	if err != nil {
+		return sourceManifestTarget{}, err
+	}
+	cacheConfig, err := project.LoadLocalConfig(projectRoot)
+	if err != nil {
+		return sourceManifestTarget{}, err
+	}
+
+	repoRoot := project.RepoRoot(projectRoot)
+	if cacheConfig.Mode == project.CacheModeGlobal {
+		cfg, err := loadConfig()
+		if err != nil {
+			return sourceManifestTarget{}, err
+		}
+		repoRoot, err = config.RepoRootPath(cfg)
+		if err != nil {
+			return sourceManifestTarget{}, err
+		}
+	}
+
+	return sourceManifestTarget{
+		ManifestPath: project.ManifestPath(projectRoot),
+		Manifest:     manifest,
+		RepoRoot:     repoRoot,
+	}, nil
+}
+
+func resolveManifestSources(global bool, aliases []string) ([]source.Source, error) {
+	target, err := resolveSourceManifestTarget(global)
+	if err != nil {
+		return nil, err
+	}
+	return selectManifestSources(target.Manifest, target.RepoRoot, aliases, global)
+}
+
+func selectManifestSources(manifest project.Manifest, repoRoot string, aliases []string, global bool) ([]source.Source, error) {
 	if len(aliases) == 0 {
-		return configuredSources(cfg, repoRoot), nil
+		aliases = make([]string, 0, len(manifest.Sources))
+		for alias := range manifest.Sources {
+			aliases = append(aliases, alias)
+		}
+		sort.Strings(aliases)
 	}
 
 	selected := make([]source.Source, 0, len(aliases))
 	seen := map[string]struct{}{}
+	scopeLabel := "repo"
+	if global {
+		scopeLabel = "home"
+	}
 
 	for _, alias := range aliases {
 		if _, ok := seen[alias]; ok {
@@ -451,9 +464,12 @@ func selectSources(cfg config.Config, repoRoot string, aliases []string) ([]sour
 		}
 		seen[alias] = struct{}{}
 
-		entry, ok := cfg.Sources[alias]
+		entry, ok := manifest.Sources[alias]
 		if !ok {
 			return nil, fmt.Errorf("unknown source %q", alias)
+		}
+		if strings.TrimSpace(entry.URL) == "" {
+			return nil, fmt.Errorf("source %q has no URL in %s manifest", alias, scopeLabel)
 		}
 
 		selected = append(selected, source.Source{

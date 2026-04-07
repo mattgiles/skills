@@ -151,6 +151,26 @@ func ResolveCommit(ctx context.Context, src Source, ref string) (string, error) 
 	return "", fmt.Errorf("could not resolve ref %q to a commit", ref)
 }
 
+func InferDefaultRef(ctx context.Context, url string) (string, error) {
+	output, err := gitOutput(ctx, "", "ls-remote", "--symref", url, "HEAD")
+	if err != nil {
+		return "", err
+	}
+
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 || fields[0] != "ref:" || fields[2] != "HEAD" {
+			continue
+		}
+		ref := strings.TrimPrefix(fields[1], "refs/heads/")
+		if strings.TrimSpace(ref) != "" {
+			return ref, nil
+		}
+	}
+
+	return "", errors.New("could not determine default ref from remote HEAD")
+}
+
 func defaultRemoteStatus(ctx context.Context, repoPath string) (string, string) {
 	ref, err := gitOutput(ctx, "", "-C", repoPath, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
 	if err != nil {

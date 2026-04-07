@@ -2,7 +2,7 @@
 
 Use `skills skill list` to inspect discovered skills in synced source repos.
 
-By default, `skill list` uses the current repo manifest sources. Use `--global` when you want to inspect globally configured sources instead.
+By default, `skill list` uses the current repo manifest sources. Use `--global` when you want to inspect sources from the shared home manifest instead.
 
 ## List All Discovered Skills
 
@@ -52,7 +52,7 @@ skills sync
 Global mode:
 
 ```bash
-skills source sync repo-one
+skills source sync --global repo-one
 ```
 
 For the exact discovery rule, see [Skill Discovery](../reference/skill-discovery.md).

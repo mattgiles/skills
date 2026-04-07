@@ -1,6 +1,6 @@
 # Global Config Reference
 
-This file controls shared home/global behavior, the global source registry, and the clone/worktree roots used by project repos that opt into `--cache=global`.
+This file controls shared home/global behavior and the clone/worktree roots used by project repos that opt into `--cache=global`.
 
 ## File Location
 
@@ -16,9 +16,6 @@ repo_root: ~/.local/share/skills/repos
 worktree_root: ~/.local/share/skills/worktrees
 shared_skills_dir: ~/.agents/skills
 shared_claude_skills_dir: ~/.claude/skills
-sources:
-  repo-one:
-    url: git@github.com:example/repo-one.git
 ```
 
 ## Fields
@@ -29,13 +26,6 @@ sources:
 | `worktree_root` | string | no | Root for pinned worktrees for shared home/global workflows and project repos using global cache mode |
 | `shared_skills_dir` | string | no | Canonical shared home skill directory |
 | `shared_claude_skills_dir` | string | no | Shared home Claude adapter directory |
-| `sources` | map | no | Registered source aliases and URLs for global/home workflows |
-
-### `sources.<alias>.url`
-
-| Field | Type | Required | Meaning |
-| --- | --- | --- | --- |
-| `url` | string | yes for each source entry | Git URL or local repo path |
 
 ## Defaults
 
@@ -44,7 +34,6 @@ repo_root: ~/.local/share/skills/repos
 worktree_root: ~/.local/share/skills/worktrees
 shared_skills_dir: ~/.agents/skills
 shared_claude_skills_dir: ~/.claude/skills
-sources: {}
 ```
 
 If `SKILLS_DATA_HOME` is set, the default storage roots become:

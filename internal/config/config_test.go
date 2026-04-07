@@ -26,9 +26,6 @@ func TestLoadMissingConfigUsesDefaults(t *testing.T) {
 	if cfg.SharedClaudeSkillsDir != DefaultConfig().SharedClaudeSkillsDir {
 		t.Fatalf("SharedClaudeSkillsDir = %q, want %q", cfg.SharedClaudeSkillsDir, DefaultConfig().SharedClaudeSkillsDir)
 	}
-	if len(cfg.Sources) != 0 {
-		t.Fatalf("Sources length = %d, want 0", len(cfg.Sources))
-	}
 }
 
 func TestSaveLoadRoundTrip(t *testing.T) {
@@ -40,10 +37,6 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		WorktreeRoot:          "~/custom/worktrees",
 		SharedSkillsDir:       "~/shared/.agents/skills",
 		SharedClaudeSkillsDir: "~/shared/.claude/skills",
-		Sources: map[string]SourceConfig{
-			"dbt-agent-skills": {URL: "git@github.com:dbt-labs/dbt-agent-skills.git"},
-			"sample":           {URL: "https://github.com/example/sample.git"},
-		},
 	}
 
 	if err := Save(path, want); err != nil {
@@ -66,18 +59,6 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if got.SharedClaudeSkillsDir != want.SharedClaudeSkillsDir {
 		t.Fatalf("SharedClaudeSkillsDir = %q, want %q", got.SharedClaudeSkillsDir, want.SharedClaudeSkillsDir)
-	}
-	if len(got.Sources) != len(want.Sources) {
-		t.Fatalf("Sources length = %d, want %d", len(got.Sources), len(want.Sources))
-	}
-	for alias, wantSource := range want.Sources {
-		gotSource, ok := got.Sources[alias]
-		if !ok {
-			t.Fatalf("missing source %q", alias)
-		}
-		if gotSource.URL != wantSource.URL {
-			t.Fatalf("source %q URL = %q, want %q", alias, gotSource.URL, wantSource.URL)
-		}
 	}
 }
 
