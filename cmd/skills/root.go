@@ -27,6 +27,7 @@ func newRootCommand() *cobra.Command {
 	cmd.AddCommand(newConfigCommand())
 	cmd.AddCommand(newSourceCommand())
 	cmd.AddCommand(newSkillCommand())
+	cmd.AddCommand(newProjectCommand())
 
 	return cmd
 }
@@ -265,12 +266,7 @@ func newSkillCommand() *cobra.Command {
 }
 
 func loadConfigAndRepoRoot() (config.Config, string, error) {
-	configPath, err := config.DefaultConfigPath()
-	if err != nil {
-		return config.Config{}, "", err
-	}
-
-	cfg, err := config.Load(configPath)
+	cfg, err := loadConfig()
 	if err != nil {
 		return config.Config{}, "", err
 	}
@@ -281,6 +277,14 @@ func loadConfigAndRepoRoot() (config.Config, string, error) {
 	}
 
 	return cfg, repoRoot, nil
+}
+
+func loadConfig() (config.Config, error) {
+	configPath, err := config.DefaultConfigPath()
+	if err != nil {
+		return config.Config{}, err
+	}
+	return config.Load(configPath)
 }
 
 func configuredSources(cfg config.Config, repoRoot string) []source.Source {

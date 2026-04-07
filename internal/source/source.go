@@ -32,6 +32,10 @@ func RepoPath(repoRoot string, alias string) string {
 	return filepath.Join(repoRoot, alias)
 }
 
+func WorktreePath(worktreeRoot string, projectID string, alias string, commit string) string {
+	return filepath.Join(worktreeRoot, projectID, alias, commit)
+}
+
 func EnsureGitAvailable() error {
 	if _, err := exec.LookPath("git"); err != nil {
 		return errors.New("git is required but was not found in PATH")
@@ -128,6 +132,50 @@ func clone(ctx context.Context, src Source) error {
 func fetch(ctx context.Context, src Source) error {
 	_, err := gitOutput(ctx, "", "-C", src.RepoPath, "fetch", "--all", "--prune")
 	return err
+}
+
+func ResolveCommit(ctx context.Context, src Source, ref string) (string, error) {
+	return gitOutput(ctx, "", "-C", src.RepoPath, "rev-parse", ref+"^{commit}")
+}
+
+func ListFilesAtCommit(ctx context.Context, src Source, commit string) ([]string, error) {
+	output, err := gitOutput(ctx, "", "-C", src.RepoPath, "ls-tree", "-r", "--name-only", commit)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(output) == "" {
+		return []string{}, nil
+	}
+	return strings.Split(output, "\n"), nil
+}
+
+func EnsureWorktree(ctx context.Context, src Source, path string, commit string) (bool, error) {
+	if info, err := os.Stat(path); err == nil {
+		if !info.IsDir() {
+			return false, fmt.Errorf("worktree path exists and is not a directory: %s", path)
+		}
+
+		head, err := gitOutput(ctx, "", "-C", path, "rev-parse", "HEAD")
+		if err != nil {
+			return false, fmt.Errorf("invalid worktree at %s: %w", path, err)
+		}
+		if head != commit {
+			return false, fmt.Errorf("worktree at %s points to %s, want %s", path, head, commit)
+		}
+		return false, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return false, err
+	}
+
+	_, err := gitOutput(ctx, "", "-C", src.RepoPath, "worktree", "add", "--detach", path, commit)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func gitOutput(ctx context.Context, dir string, args ...string) (string, error) {

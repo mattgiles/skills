@@ -5,8 +5,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
+
+	"github.com/mattgiles/skills/internal/project"
 )
 
 func TestSourceAddPersistsConfig(t *testing.T) {
@@ -141,6 +144,124 @@ func TestSkillListSkipsUnsyncedSource(t *testing.T) {
 	}
 }
 
+func TestProjectInitCreatesManifest(t *testing.T) {
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "init")
+	if err != nil {
+		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "created manifest:") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+
+	if _, err := os.Stat(filepath.Join(projectDir, ".skills.yaml")); err != nil {
+		t.Fatalf("manifest missing: %v", err)
+	}
+}
+
+func TestProjectSyncCreatesWorktreeAndSymlink(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	resolvedProjectDir := resolvedPath(t, projectDir)
+
+	remote := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+	commit := gitOutput(t, remote, "rev-parse", "HEAD")
+
+	writeProjectManifest(t, projectDir, manifestFor(remote, map[string][]string{
+		"analytics": {"codex"},
+	}))
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "sync")
+	if err != nil {
+		t.Fatalf("project sync error = %v, stderr = %s", err, stderr)
+	}
+	assertOutputHasFields(t, stdout, "repo-one", "ready", "main", commit[:12])
+	assertOutputHasFields(t, stdout, "codex", "repo-one", "analytics", "created", filepath.Join(resolvedProjectDir, "agent-skills", "analytics"))
+
+	projectID, err := project.ProjectID(resolvedProjectDir)
+	if err != nil {
+		t.Fatalf("ProjectID() error = %v", err)
+	}
+
+	linkPath := filepath.Join(resolvedProjectDir, "agent-skills", "analytics")
+	target, err := os.Readlink(linkPath)
+	if err != nil {
+		t.Fatalf("Readlink(%q) error = %v", linkPath, err)
+	}
+
+	wantTarget := filepath.Join(env.dataHome, "skills", "worktrees", projectID, "repo-one", commit, "analytics")
+	if target != wantTarget {
+		t.Fatalf("link target = %q, want %q", target, wantTarget)
+	}
+
+	if _, err := os.Stat(filepath.Join(env.dataHome, "skills", "repos", "repo-one")); err != nil {
+		t.Fatalf("canonical clone missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(resolvedProjectDir, ".skills", "state.yaml")); err != nil {
+		t.Fatalf("state file missing: %v", err)
+	}
+
+	statusOut, statusErr, err := executeCommandInDir(t, env, projectDir, "project", "status")
+	if err != nil {
+		t.Fatalf("project status error = %v, stderr = %s", err, statusErr)
+	}
+	assertOutputHasFields(t, statusOut, "repo-one", "ready", "main", commit[:12])
+	assertOutputHasFields(t, statusOut, "codex", "repo-one", "analytics", "ok", linkPath)
+}
+
+func TestProjectSyncPrunesManagedStaleLinks(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	resolvedProjectDir := resolvedPath(t, projectDir)
+
+	remote := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+		"lint/SKILL.md":      "# lint",
+	})
+
+	writeProjectManifest(t, projectDir, manifestFor(remote, map[string][]string{
+		"analytics": {"codex"},
+		"lint":      {"codex"},
+	}))
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "sync"); err != nil {
+		t.Fatalf("initial project sync error = %v, stderr = %s", err, stderr)
+	}
+
+	writeProjectManifest(t, projectDir, manifestFor(remote, map[string][]string{
+		"analytics": {"codex"},
+	}))
+
+	statusOut, statusErr, err := executeCommandInDir(t, env, projectDir, "project", "status")
+	if err != nil {
+		t.Fatalf("project status error = %v, stderr = %s", err, statusErr)
+	}
+	if !strings.Contains(statusOut, filepath.Join(resolvedProjectDir, "agent-skills", "lint")) {
+		t.Fatalf("status output missing stale lint path:\n%s", statusOut)
+	}
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "sync")
+	if err != nil {
+		t.Fatalf("project sync prune error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, filepath.Join(resolvedProjectDir, "agent-skills", "lint")) {
+		t.Fatalf("sync output missing pruned lint path:\n%s", stdout)
+	}
+
+	if _, err := os.Lstat(filepath.Join(resolvedProjectDir, "agent-skills", "lint")); !os.IsNotExist(err) {
+		t.Fatalf("lint symlink should be pruned, got err = %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(resolvedProjectDir, "agent-skills", "analytics")); err != nil {
+		t.Fatalf("analytics symlink missing after prune: %v", err)
+	}
+}
+
 type testEnv struct {
 	configHome string
 	dataHome   string
@@ -159,6 +280,10 @@ func newTestEnv(t *testing.T) testEnv {
 }
 
 func executeCommand(t *testing.T, env testEnv, args ...string) (string, string, error) {
+	return executeCommandInDir(t, env, "", args...)
+}
+
+func executeCommandInDir(t *testing.T, env testEnv, dir string, args ...string) (string, string, error) {
 	t.Helper()
 
 	cmd := newRootCommand()
@@ -173,7 +298,20 @@ func executeCommand(t *testing.T, env testEnv, args ...string) (string, string, 
 	t.Setenv("XDG_CONFIG_HOME", env.configHome)
 	t.Setenv("XDG_DATA_HOME", env.dataHome)
 
-	err := cmd.Execute()
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	if dir != "" {
+		if err := os.Chdir(dir); err != nil {
+			t.Fatalf("Chdir(%q) error = %v", dir, err)
+		}
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalWD)
+	})
+
+	err = cmd.Execute()
 	return stdout.String(), stderr.String(), err
 }
 
@@ -236,6 +374,41 @@ func mustWriteFile(t *testing.T, path string, contents string) {
 	}
 }
 
+func writeProjectManifest(t *testing.T, projectDir string, contents string) {
+	t.Helper()
+	mustWriteFile(t, filepath.Join(projectDir, ".skills.yaml"), contents)
+}
+
+func manifestFor(remoteURL string, skills map[string][]string) string {
+	lines := []string{
+		"sources:",
+		"  repo-one:",
+		"    url: " + remoteURL,
+		"    ref: main",
+		"agents:",
+		"  codex:",
+		"    skills_dir: ./agent-skills",
+		"skills:",
+	}
+
+	names := make([]string, 0, len(skills))
+	for name := range skills {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		agents := skills[name]
+		lines = append(lines,
+			"  - source: repo-one",
+			"    name: "+name,
+			"    agents: ["+strings.Join(agents, ", ")+"]",
+		)
+	}
+
+	return strings.Join(lines, "\n") + "\n"
+}
+
 func assertOutputHasFields(t *testing.T, output string, want ...string) {
 	t.Helper()
 
@@ -258,4 +431,14 @@ func assertOutputHasFields(t *testing.T, output string, want ...string) {
 	}
 
 	t.Fatalf("output missing row %v:\n%s", want, output)
+}
+
+func resolvedPath(t *testing.T, path string) string {
+	t.Helper()
+
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(%q) error = %v", path, err)
+	}
+	return resolved
 }

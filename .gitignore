@@ -1,0 +1,12 @@
+# Built CLI binary from `go build ./cmd/skills`
+/skills
+
+# Local runtime state if this repo uses the tool itself
+/.skills/
+
+# Common local test output
+/coverage.out
+*.test
+
+# macOS filesystem noise
+.DS_Store

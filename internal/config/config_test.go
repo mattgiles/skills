@@ -17,8 +17,14 @@ func TestLoadMissingConfigUsesDefaults(t *testing.T) {
 	if cfg.RepoRoot != defaultRepoRootValue() {
 		t.Fatalf("RepoRoot = %q, want %q", cfg.RepoRoot, defaultRepoRootValue())
 	}
+	if cfg.WorktreeRoot != defaultWorktreeRootValue() {
+		t.Fatalf("WorktreeRoot = %q, want %q", cfg.WorktreeRoot, defaultWorktreeRootValue())
+	}
 	if len(cfg.Sources) != 0 {
 		t.Fatalf("Sources length = %d, want 0", len(cfg.Sources))
+	}
+	if len(cfg.Agents) == 0 {
+		t.Fatal("Agents should have default entries")
 	}
 }
 
@@ -27,7 +33,11 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	want := Config{
-		RepoRoot: "~/custom/repos",
+		RepoRoot:     "~/custom/repos",
+		WorktreeRoot: "~/custom/worktrees",
+		Agents: map[string]AgentConfig{
+			"codex": {SkillsDir: "~/.codex/skills"},
+		},
 		Sources: map[string]SourceConfig{
 			"dbt-agent-skills": {URL: "git@github.com:dbt-labs/dbt-agent-skills.git"},
 			"sample":           {URL: "https://github.com/example/sample.git"},
@@ -46,8 +56,14 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if got.RepoRoot != want.RepoRoot {
 		t.Fatalf("RepoRoot = %q, want %q", got.RepoRoot, want.RepoRoot)
 	}
+	if got.WorktreeRoot != want.WorktreeRoot {
+		t.Fatalf("WorktreeRoot = %q, want %q", got.WorktreeRoot, want.WorktreeRoot)
+	}
 	if len(got.Sources) != len(want.Sources) {
 		t.Fatalf("Sources length = %d, want %d", len(got.Sources), len(want.Sources))
+	}
+	if got.Agents["codex"].SkillsDir != want.Agents["codex"].SkillsDir {
+		t.Fatalf("codex SkillsDir = %q, want %q", got.Agents["codex"].SkillsDir, want.Agents["codex"].SkillsDir)
 	}
 	for alias, wantSource := range want.Sources {
 		gotSource, ok := got.Sources[alias]
@@ -115,6 +131,10 @@ func TestDefaultConfigUsesXDGDataHome(t *testing.T) {
 	want := filepath.Join(dataHome, "skills", "repos")
 	if cfg.RepoRoot != want {
 		t.Fatalf("DefaultConfig().RepoRoot = %q, want %q", cfg.RepoRoot, want)
+	}
+	worktreeWant := filepath.Join(dataHome, "skills", "worktrees")
+	if cfg.WorktreeRoot != worktreeWant {
+		t.Fatalf("DefaultConfig().WorktreeRoot = %q, want %q", cfg.WorktreeRoot, worktreeWant)
 	}
 }
 
