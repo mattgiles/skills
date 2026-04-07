@@ -13,6 +13,7 @@ import (
 
 	"github.com/mattgiles/skills/internal/config"
 	"github.com/mattgiles/skills/internal/discovery"
+	"github.com/mattgiles/skills/internal/project"
 	"github.com/mattgiles/skills/internal/source"
 )
 
@@ -248,6 +249,7 @@ func newSourceSyncCommand() *cobra.Command {
 
 func newSkillCommand() *cobra.Command {
 	var sourceAlias string
+	var global bool
 
 	cmd := &cobra.Command{
 		Use:   "skill",
@@ -258,17 +260,7 @@ func newSkillCommand() *cobra.Command {
 		Use:   "list",
 		Short: "List discovered skills",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, repoRoot, err := loadConfigAndRepoRoot()
-			if err != nil {
-				return err
-			}
-
-			aliases := []string{}
-			if sourceAlias != "" {
-				aliases = append(aliases, sourceAlias)
-			}
-
-			selected, err := selectSources(cfg, repoRoot, aliases)
+			selected, err := skillListSources(global, sourceAlias)
 			if err != nil {
 				return err
 			}
@@ -324,10 +316,84 @@ func newSkillCommand() *cobra.Command {
 		},
 	}
 
+	listCmd.Flags().BoolVar(&global, "global", false, "List skills from shared global sources instead of the current repo")
 	listCmd.Flags().StringVar(&sourceAlias, "source", "", "Only list skills from the named source")
 	cmd.AddCommand(listCmd)
 
 	return cmd
+}
+
+func skillListSources(global bool, sourceAlias string) ([]source.Source, error) {
+	if global {
+		cfg, repoRoot, err := loadConfigAndRepoRoot()
+		if err != nil {
+			return nil, err
+		}
+
+		aliases := []string{}
+		if sourceAlias != "" {
+			aliases = append(aliases, sourceAlias)
+		}
+		return selectSources(cfg, repoRoot, aliases)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	projectRoot, err := resolveRepoRoot(cwd, true)
+	if err != nil {
+		return nil, err
+	}
+
+	manifest, err := project.LoadManifest(projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	cacheConfig, err := project.LoadLocalConfig(projectRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	repoRoot := project.RepoRoot(projectRoot)
+	if cacheConfig.Mode == project.CacheModeGlobal {
+		cfg, err := loadConfig()
+		if err != nil {
+			return nil, err
+		}
+		repoRoot, err = config.RepoRootPath(cfg)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	aliases := make([]string, 0, len(manifest.Sources))
+	for alias := range manifest.Sources {
+		if sourceAlias != "" && alias != sourceAlias {
+			continue
+		}
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+
+	if sourceAlias != "" && len(aliases) == 0 {
+		return nil, fmt.Errorf("unknown source %q", sourceAlias)
+	}
+
+	selected := make([]source.Source, 0, len(aliases))
+	for _, alias := range aliases {
+		entry := manifest.Sources[alias]
+		if strings.TrimSpace(entry.URL) == "" {
+			return nil, fmt.Errorf("source %q has no URL in repo manifest", alias)
+		}
+		selected = append(selected, source.Source{
+			Alias:    alias,
+			URL:      entry.URL,
+			RepoPath: source.RepoPath(repoRoot, alias),
+		})
+	}
+
+	return selected, nil
 }
 
 func loadConfigAndRepoRoot() (config.Config, string, error) {

@@ -72,7 +72,7 @@ func TestSourceSyncClonesAndSkillListAggregates(t *testing.T) {
 		t.Fatalf("sync stdout = %q", stdout)
 	}
 
-	stdout, stderr, err = executeCommand(t, env, "skill", "list")
+	stdout, stderr, err = executeCommand(t, env, "skill", "list", "--global")
 	if err != nil {
 		t.Fatalf("skill list error = %v, stderr = %s", err, stderr)
 	}
@@ -90,7 +90,7 @@ func TestSkillListSkipsUnsyncedSource(t *testing.T) {
 		t.Fatalf("add source error = %v, stderr = %s", err, stderr)
 	}
 
-	stdout, stderr, err := executeCommand(t, env, "skill", "list")
+	stdout, stderr, err := executeCommand(t, env, "skill", "list", "--global")
 	if err != nil {
 		t.Fatalf("skill list error = %v, stderr = %s", err, stderr)
 	}
@@ -101,6 +101,35 @@ func TestSkillListSkipsUnsyncedSource(t *testing.T) {
 	if !strings.Contains(stderr, `warning: skipping unsynced source "repo-one"`) {
 		t.Fatalf("stderr = %q", stderr)
 	}
+}
+
+func TestSkillListUsesRepoManifestSourcesByDefault(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
+
+	remote := initRemoteRepo(t, map[string]string{
+		"skills/golang-cli/SKILL.md":  "# golang-cli",
+		"skills/golang-http/SKILL.md": "# golang-http",
+	})
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=global"); err != nil {
+		t.Fatalf("init error = %v, stderr = %s", err, stderr)
+	}
+	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"golang-cli"}))
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "sync"); err != nil {
+		t.Fatalf("sync error = %v, stderr = %s", err, stderr)
+	}
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "skill", "list")
+	if err != nil {
+		t.Fatalf("skill list error = %v, stderr = %s", err, stderr)
+	}
+
+	assertOutputHasFields(t, stdout, "repo-one", "golang-cli", filepath.Join("skills", "golang-cli"))
+	assertOutputHasFields(t, stdout, "repo-one", "golang-http", filepath.Join("skills", "golang-http"))
 }
 
 func TestVersionCommandShowsBuildInfo(t *testing.T) {

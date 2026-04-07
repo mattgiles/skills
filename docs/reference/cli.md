@@ -120,10 +120,13 @@ Clones missing sources and fetches existing ones.
 
 Lists discovered skills from synced source repos.
 
+By default it uses the current repo manifest sources. Use `--global` to inspect the shared global source registry instead.
+
 Flags:
 
 | Flag | Meaning |
 | --- | --- |
+| `--global` | List skills from shared global sources instead of the current repo |
 | `--source <alias>` | Only list skills from the named source |
 
 ## `skills status`
