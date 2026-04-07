@@ -3,6 +3,7 @@
 This tutorial walks through the first successful `skills` workflow with a local Git repo. It uses the new standardized project layout:
 
 - `.agents/manifest.yaml`
+- `.agents/cache/`
 - `.agents/skills/`
 - `.claude/skills/`
 
@@ -39,9 +40,6 @@ export SKILLS_BIN="/absolute/path/to/skills-repo/bin/skills"
 ```bash
 mkdir -p /tmp/skills-tutorial
 cd /tmp/skills-tutorial
-
-export SKILLS_CONFIG_HOME="$PWD/skills-config"
-export SKILLS_DATA_HOME="$PWD/skills-data"
 ```
 
 ## 3. Create A Local Skill Repository
@@ -59,20 +57,12 @@ git commit -m "initial"
 cd /tmp/skills-tutorial
 ```
 
-## 4. Initialize Global Config And Source
-
-```bash
-$SKILLS_BIN config init
-$SKILLS_BIN source add repo-one "$PWD/repos/repo-one"
-$SKILLS_BIN source sync
-```
-
-## 5. Initialize A Standardized Project Workspace
+## 4. Initialize A Standardized Project Workspace
 
 ```bash
 mkdir -p project
 cd project
-$SKILLS_BIN project init
+$SKILLS_BIN init --project
 ```
 
 Edit `.agents/manifest.yaml`:
@@ -87,7 +77,7 @@ skills:
     name: analytics
 ```
 
-## 6. Sync The Project
+## 5. Sync The Project
 
 ```bash
 $SKILLS_BIN project sync --verbose
@@ -99,12 +89,13 @@ On the first run you should see:
 - a `SKILLS` section with `analytics` in status `created`
 - a `CLAUDE` section with `analytics` in status `created`
 
-## 7. Inspect The Result
+## 6. Inspect The Result
 
 ```bash
 $SKILLS_BIN project status --verbose
+ls -l .agents/cache
 ls -l .agents/skills
 ls -l .claude/skills
 ```
 
-The canonical link in `.agents/skills/analytics` should point into the worktree root under `SKILLS_DATA_HOME`. The Claude adapter in `.claude/skills/analytics` should point at the canonical `.agents/skills/analytics` path.
+The canonical link in `.agents/skills/analytics` should point into `.agents/cache/worktrees`. The Claude adapter in `.claude/skills/analytics` should point at the canonical `.agents/skills/analytics` path.

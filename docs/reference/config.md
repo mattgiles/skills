@@ -1,5 +1,7 @@
 # Global Config Reference
 
+This file only controls shared home/global behavior and the global source registry. Project-local `skills project ...` workflows are self-contained and do not require this config file.
+
 ## File Location
 
 Default config path:
@@ -23,11 +25,11 @@ sources:
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `repo_root` | string | no | Canonical clone root |
-| `worktree_root` | string | no | Root for pinned worktrees |
+| `repo_root` | string | no | Canonical clone root for shared home/global workflows |
+| `worktree_root` | string | no | Root for pinned worktrees for shared home/global workflows |
 | `shared_skills_dir` | string | no | Canonical shared home skill directory |
 | `shared_claude_skills_dir` | string | no | Shared home Claude adapter directory |
-| `sources` | map | no | Registered source aliases and URLs |
+| `sources` | map | no | Registered source aliases and URLs for global/home workflows |
 
 ### `sources.<alias>.url`
 

@@ -17,6 +17,7 @@ Global flags:
 
 ```text
 skills
+├── init [--project|--global]
 ├── doctor [--global]
 ├── config
 │   └── init
@@ -50,9 +51,10 @@ Runs a read-only diagnostic pass for the current project workspace by default.
 Checks:
 
 - `git` availability
-- global config parsing and path resolution
 - project manifest and state parsing
+- project `.gitignore` ownership for managed runtime paths
 - source readiness and ref resolution
+- project-local cache health under `.agents/cache/`
 - canonical `.agents/skills` link health
 - Claude `.claude/skills` adapter health
 
@@ -61,6 +63,24 @@ Flags:
 | Flag | Meaning |
 | --- | --- |
 | `--global` | Inspect global config and the shared home workspace instead of the current project |
+
+## `skills init`
+
+Initializes either repo-local project state or shared home/global state.
+
+Flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--project` | Initialize repo-local project state explicitly |
+| `--global` | Initialize shared home/global state explicitly |
+
+Behavior:
+
+- inside a Git repo, `skills init` routes to repo-local initialization automatically when repo-local `skills` artifacts already exist
+- inside a Git repo with no existing `skills` artifacts, `skills init` prompts on an interactive TTY
+- in non-interactive contexts, pass `--project` or `--global`
+- outside a Git repo, `skills init` requires explicit scope
 
 ## `skills source add <alias> <git-url>`
 
@@ -105,10 +125,13 @@ Flags:
 Creates a project-local standardized workspace:
 
 - `.agents/manifest.yaml`
+- `.agents/cache/repos/`
+- `.agents/cache/worktrees/`
 - `.agents/skills/`
 - `.claude/skills/`
 - ignore rules for:
   - `.agents/state.yaml`
+  - `.agents/cache/`
   - `.agents/skills/`
   - `.claude/skills/`
 
@@ -137,6 +160,7 @@ Syncs the declared project skills into:
 
 - canonical project links in `.agents/skills`
 - Claude adapter links in `.claude/skills`
+- using project-local clones and worktrees under `.agents/cache/`
 
 Flags:
 

@@ -4,7 +4,7 @@ The project separates canonical source clones from project installs.
 
 ## Canonical Clones
 
-Each source has one canonical local clone under `repo_root`. That clone is the place `skills` fetches from and resolves refs against.
+Project mode keeps one canonical local clone per source under `.agents/cache/repos`. Home/global mode keeps canonical clones under `repo_root`.
 
 ## Project Pins
 
@@ -18,7 +18,10 @@ What exact content should this project install right now?
 
 ## Worktrees
 
-The CLI materializes project content under `worktree_root`, keyed by project identity, source alias, and commit.
+The CLI materializes project content under a worktree root keyed by project identity, source alias, and commit:
+
+- project mode: `.agents/cache/worktrees`
+- home/global mode: `worktree_root`
 
 This avoids two common problems:
 

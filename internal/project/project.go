@@ -25,6 +25,9 @@ const (
 	StateFilename        = ".agents/state.yaml"
 	SkillsDirname        = ".agents/skills"
 	ClaudeSkillsDirname  = ".claude/skills"
+	CacheDirname         = ".agents/cache"
+	RepoCacheDirname     = ".agents/cache/repos"
+	WorktreeCacheDirname = ".agents/cache/worktrees"
 	homeManifestFilename = "manifest.yaml"
 	homeStateFilename    = "state.yaml"
 	projectWorkspaceName = "project"
@@ -137,6 +140,11 @@ type ProjectOwnershipReport struct {
 	TrackedPaths  []string
 }
 
+type ArtifactReport struct {
+	HasArtifacts bool
+	Paths        []string
+}
+
 type workspace struct {
 	Name            string
 	RootDir         string
@@ -144,6 +152,10 @@ type workspace struct {
 	StatePath       string
 	SkillsDir       string
 	ClaudeSkillsDir string
+	CacheDir        string
+	RepoRoot        string
+	WorktreeRoot    string
+	GlobalSources   map[string]config.SourceConfig
 }
 
 type desiredLink struct {
@@ -192,6 +204,18 @@ func SkillsDir(projectDir string) string {
 
 func ClaudeSkillsDir(projectDir string) string {
 	return filepath.Join(projectDir, ClaudeSkillsDirname)
+}
+
+func CacheDir(projectDir string) string {
+	return filepath.Join(projectDir, CacheDirname)
+}
+
+func RepoRoot(projectDir string) string {
+	return filepath.Join(projectDir, RepoCacheDirname)
+}
+
+func WorktreeRoot(projectDir string) string {
+	return filepath.Join(projectDir, WorktreeCacheDirname)
 }
 
 func HomeManifestPath(cfg config.Config) (string, error) {
@@ -244,6 +268,12 @@ func InitProject(projectDir string) (InitProjectResult, error) {
 	if err := os.MkdirAll(ws.ClaudeSkillsDir, 0o755); err != nil {
 		return InitProjectResult{}, err
 	}
+	if err := os.MkdirAll(ws.RepoRoot, 0o755); err != nil {
+		return InitProjectResult{}, err
+	}
+	if err := os.MkdirAll(ws.WorktreeRoot, 0o755); err != nil {
+		return InitProjectResult{}, err
+	}
 	updated, err := ensureProjectGitignore(ownership)
 	if err != nil {
 		return InitProjectResult{}, err
@@ -264,6 +294,12 @@ func InitHome(cfg config.Config) (string, error) {
 		return "", err
 	}
 	if err := os.MkdirAll(ws.ClaudeSkillsDir, 0o755); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(ws.RepoRoot, 0o755); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(ws.WorktreeRoot, 0o755); err != nil {
 		return "", err
 	}
 	return ws.ManifestPath, nil
@@ -309,6 +345,30 @@ func InspectProjectOwnership(projectDir string) (ProjectOwnershipReport, error) 
 	}
 
 	return report, nil
+}
+
+func InspectProjectArtifacts(projectDir string) (ArtifactReport, error) {
+	paths := []string{
+		ManifestPath(projectDir),
+		StatePath(projectDir),
+		SkillsDir(projectDir),
+		ClaudeSkillsDir(projectDir),
+		CacheDir(projectDir),
+	}
+
+	found := make([]string, 0)
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			found = append(found, path)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return ArtifactReport{}, err
+		}
+	}
+
+	return ArtifactReport{
+		HasArtifacts: len(found) > 0,
+		Paths:        found,
+	}, nil
 }
 
 func LoadManifest(projectDir string) (Manifest, error) {
@@ -445,8 +505,8 @@ func ProjectID(projectDir string) (string, error) {
 	return base + "-" + hash, nil
 }
 
-func Status(ctx context.Context, projectDir string, cfg config.Config) (StatusReport, error) {
-	return statusWorkspace(ctx, projectWorkspace(projectDir), cfg)
+func Status(ctx context.Context, projectDir string) (StatusReport, error) {
+	return statusWorkspace(ctx, projectWorkspace(projectDir))
 }
 
 func HomeStatus(ctx context.Context, cfg config.Config) (StatusReport, error) {
@@ -454,11 +514,11 @@ func HomeStatus(ctx context.Context, cfg config.Config) (StatusReport, error) {
 	if err != nil {
 		return StatusReport{}, err
 	}
-	return statusWorkspace(ctx, ws, cfg)
+	return statusWorkspace(ctx, ws)
 }
 
-func Sync(ctx context.Context, projectDir string, cfg config.Config, options SyncOptions) (SyncResult, error) {
-	return syncWorkspace(ctx, projectWorkspace(projectDir), cfg, options)
+func Sync(ctx context.Context, projectDir string, options SyncOptions) (SyncResult, error) {
+	return syncWorkspace(ctx, projectWorkspace(projectDir), options)
 }
 
 func HomeSync(ctx context.Context, cfg config.Config, options SyncOptions) (SyncResult, error) {
@@ -466,11 +526,11 @@ func HomeSync(ctx context.Context, cfg config.Config, options SyncOptions) (Sync
 	if err != nil {
 		return SyncResult{}, err
 	}
-	return syncWorkspace(ctx, ws, cfg, options)
+	return syncWorkspace(ctx, ws, options)
 }
 
-func Update(ctx context.Context, projectDir string, cfg config.Config, options UpdateOptions) (UpdateResult, error) {
-	return updateWorkspace(ctx, projectWorkspace(projectDir), cfg, options)
+func Update(ctx context.Context, projectDir string, options UpdateOptions) (UpdateResult, error) {
+	return updateWorkspace(ctx, projectWorkspace(projectDir), options)
 }
 
 func HomeUpdate(ctx context.Context, cfg config.Config, options UpdateOptions) (UpdateResult, error) {
@@ -478,7 +538,7 @@ func HomeUpdate(ctx context.Context, cfg config.Config, options UpdateOptions) (
 	if err != nil {
 		return UpdateResult{}, err
 	}
-	return updateWorkspace(ctx, ws, cfg, options)
+	return updateWorkspace(ctx, ws, options)
 }
 
 func projectWorkspace(projectDir string) workspace {
@@ -489,10 +549,21 @@ func projectWorkspace(projectDir string) workspace {
 		StatePath:       StatePath(projectDir),
 		SkillsDir:       SkillsDir(projectDir),
 		ClaudeSkillsDir: ClaudeSkillsDir(projectDir),
+		CacheDir:        CacheDir(projectDir),
+		RepoRoot:        RepoRoot(projectDir),
+		WorktreeRoot:    WorktreeRoot(projectDir),
 	}
 }
 
 func homeWorkspace(cfg config.Config) (workspace, error) {
+	repoRoot, err := config.RepoRootPath(cfg)
+	if err != nil {
+		return workspace{}, err
+	}
+	worktreeRoot, err := config.WorktreeRootPath(cfg)
+	if err != nil {
+		return workspace{}, err
+	}
 	skillsDir, err := config.SharedSkillsDirPath(cfg)
 	if err != nil {
 		return workspace{}, err
@@ -510,11 +581,14 @@ func homeWorkspace(cfg config.Config) (workspace, error) {
 		StatePath:       filepath.Join(rootDir, homeStateFilename),
 		SkillsDir:       skillsDir,
 		ClaudeSkillsDir: claudeDir,
+		RepoRoot:        repoRoot,
+		WorktreeRoot:    worktreeRoot,
+		GlobalSources:   cfg.Sources,
 	}, nil
 }
 
-func statusWorkspace(ctx context.Context, ws workspace, cfg config.Config) (StatusReport, error) {
-	manifest, state, resolvedSources, err := loadWorkspaceInputs(ws, cfg)
+func statusWorkspace(ctx context.Context, ws workspace) (StatusReport, error) {
+	manifest, state, resolvedSources, err := loadWorkspaceInputs(ws)
 	if err != nil {
 		return StatusReport{}, err
 	}
@@ -551,8 +625,8 @@ func statusWorkspace(ctx context.Context, ws workspace, cfg config.Config) (Stat
 	}, nil
 }
 
-func syncWorkspace(ctx context.Context, ws workspace, cfg config.Config, options SyncOptions) (SyncResult, error) {
-	manifest, state, resolvedSources, err := loadWorkspaceInputs(ws, cfg)
+func syncWorkspace(ctx context.Context, ws workspace, options SyncOptions) (SyncResult, error) {
+	manifest, state, resolvedSources, err := loadWorkspaceInputs(ws)
 	if err != nil {
 		return SyncResult{}, err
 	}
@@ -667,8 +741,8 @@ func syncWorkspace(ctx context.Context, ws workspace, cfg config.Config, options
 	return result, nil
 }
 
-func updateWorkspace(ctx context.Context, ws workspace, cfg config.Config, options UpdateOptions) (UpdateResult, error) {
-	manifest, state, resolvedSources, err := loadWorkspaceInputs(ws, cfg)
+func updateWorkspace(ctx context.Context, ws workspace, options UpdateOptions) (UpdateResult, error) {
+	manifest, state, resolvedSources, err := loadWorkspaceInputs(ws)
 	if err != nil {
 		return UpdateResult{}, err
 	}
@@ -821,7 +895,7 @@ func syncWorkspaceWithState(ctx context.Context, ws workspace, manifest Manifest
 	return result, nil
 }
 
-func loadWorkspaceInputs(ws workspace, cfg config.Config) (Manifest, State, map[string]*resolvedSource, error) {
+func loadWorkspaceInputs(ws workspace) (Manifest, State, map[string]*resolvedSource, error) {
 	manifest, err := LoadManifestAt(ws.ManifestPath)
 	if err != nil {
 		return Manifest{}, State{}, nil, err
@@ -832,12 +906,7 @@ func loadWorkspaceInputs(ws workspace, cfg config.Config) (Manifest, State, map[
 		return Manifest{}, State{}, nil, err
 	}
 
-	worktreeRoot, err := config.WorktreeRootPath(cfg)
-	if err != nil {
-		return Manifest{}, State{}, nil, err
-	}
-
-	resolvedSources, err := resolveInputs(ws, cfg, manifest, worktreeRoot)
+	resolvedSources, err := resolveInputs(ws, manifest)
 	if err != nil {
 		return Manifest{}, State{}, nil, err
 	}
@@ -845,12 +914,7 @@ func loadWorkspaceInputs(ws workspace, cfg config.Config) (Manifest, State, map[
 	return manifest, state, resolvedSources, nil
 }
 
-func resolveInputs(ws workspace, cfg config.Config, manifest Manifest, worktreeRoot string) (map[string]*resolvedSource, error) {
-	repoRoot, err := config.RepoRootPath(cfg)
-	if err != nil {
-		return nil, err
-	}
-
+func resolveInputs(ws workspace, manifest Manifest) (map[string]*resolvedSource, error) {
 	workspaceID, err := ProjectID(ws.RootDir)
 	if err != nil {
 		return nil, err
@@ -858,16 +922,15 @@ func resolveInputs(ws workspace, cfg config.Config, manifest Manifest, worktreeR
 
 	resolvedSources := map[string]*resolvedSource{}
 	for alias, manifestSource := range manifest.Sources {
-		globalSource, hasGlobal := cfg.Sources[alias]
-		switch {
-		case hasGlobal && strings.TrimSpace(manifestSource.URL) != "" && manifestSource.URL != globalSource.URL:
-			return nil, fmt.Errorf("source %q has conflicting URLs between global config and manifest", alias)
-		case strings.TrimSpace(manifestSource.URL) == "" && !hasGlobal:
-			return nil, fmt.Errorf("source %q has no URL in manifest or global config", alias)
-		}
-
 		url := manifestSource.URL
 		if strings.TrimSpace(url) == "" {
+			if ws.Name == projectWorkspaceName {
+				return nil, fmt.Errorf("source %q has no URL in project manifest", alias)
+			}
+			globalSource, hasGlobal := ws.GlobalSources[alias]
+			if !hasGlobal || strings.TrimSpace(globalSource.URL) == "" {
+				return nil, fmt.Errorf("source %q has no URL in manifest or global config", alias)
+			}
 			url = globalSource.URL
 		}
 
@@ -875,8 +938,8 @@ func resolveInputs(ws workspace, cfg config.Config, manifest Manifest, worktreeR
 			Alias:        alias,
 			URL:          url,
 			Ref:          manifestSource.Ref,
-			RepoPath:     source.RepoPath(repoRoot, alias),
-			WorktreeRoot: worktreeRoot,
+			RepoPath:     source.RepoPath(ws.RepoRoot, alias),
+			WorktreeRoot: ws.WorktreeRoot,
 			WorkspaceID:  workspaceID,
 		}
 	}
@@ -1547,6 +1610,7 @@ func validateManagedPathTypes(ws workspace) error {
 		{path: ws.StatePath, wantDir: false, label: "state path"},
 		{path: ws.SkillsDir, wantDir: true, label: "skills directory"},
 		{path: ws.ClaudeSkillsDir, wantDir: true, label: "Claude skills directory"},
+		{path: ws.CacheDir, wantDir: true, label: "cache directory"},
 	}
 
 	for _, check := range checks {
@@ -1572,7 +1636,7 @@ func validateManagedPathTypes(ws workspace) error {
 }
 
 func managedRuntimeIgnoreRules(ignoreBase string, ws workspace) ([]string, []string, error) {
-	managedPaths := []string{ws.StatePath, ws.SkillsDir, ws.ClaudeSkillsDir}
+	managedPaths := []string{ws.StatePath, ws.SkillsDir, ws.ClaudeSkillsDir, ws.CacheDir}
 	rules := make([]string, 0, len(managedPaths))
 	pathspecs := make([]string, 0, len(managedPaths))
 
@@ -1584,7 +1648,7 @@ func managedRuntimeIgnoreRules(ignoreBase string, ws workspace) ([]string, []str
 		rel = filepath.ToSlash(rel)
 		pathspecs = append(pathspecs, rel)
 		rule := "/" + rel
-		if managedPath == ws.SkillsDir || managedPath == ws.ClaudeSkillsDir {
+		if managedPath == ws.SkillsDir || managedPath == ws.ClaudeSkillsDir || managedPath == ws.CacheDir {
 			rule += "/"
 		}
 		rules = append(rules, rule)

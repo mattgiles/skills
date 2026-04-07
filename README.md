@@ -2,7 +2,7 @@
 
 `skills` is a Go CLI for managing reusable agent skills from Git repositories.
 
-It keeps canonical source clones in a configurable repo store, resolves refs to pinned worktrees, and exposes installed skills as symlinks in canonical `.agents/skills` directories. It also manages `.claude/skills` adapter links for Claude skill compatibility.
+Project mode is self-contained: it keeps canonical source clones and pinned worktrees under `.agents/cache/` inside the repo, installs canonical links in `.agents/skills`, and manages `.claude/skills` adapter links for Claude compatibility. Home mode remains available for shared machine-level installs.
 
 ## Install
 
@@ -37,6 +37,8 @@ The installer downloads a prebuilt binary from GitHub Releases, verifies its che
 - Project scope:
   - `.agents/manifest.yaml`
   - `.agents/state.yaml` as generated runtime state
+  - `.agents/cache/repos/`
+  - `.agents/cache/worktrees/`
   - `.agents/skills/<skill-name>`
   - `.claude/skills/<skill-name>`
 - Home scope:
@@ -47,4 +49,4 @@ The installer downloads a prebuilt binary from GitHub Releases, verifies its che
 
 In both scopes, canonical skill links point to pinned worktree directories, not directly to mutable source clones.
 
-In project scope, `skills project init` also ensures the generated runtime artifacts are gitignored. The tracked project input is `.agents/manifest.yaml`; `.agents/state.yaml`, `.agents/skills/`, and `.claude/skills/` are managed runtime paths.
+In project scope, `skills project init` also ensures the generated runtime artifacts are gitignored. The tracked project input is `.agents/manifest.yaml`; `.agents/state.yaml`, `.agents/cache/`, `.agents/skills/`, and `.claude/skills/` are managed runtime paths.

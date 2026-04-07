@@ -13,10 +13,13 @@ skills project init
 This creates:
 
 - `.agents/manifest.yaml`
+- `.agents/cache/repos/`
+- `.agents/cache/worktrees/`
 - `.agents/skills/`
 - `.claude/skills/`
 - `.gitignore` coverage for:
   - `.agents/state.yaml`
+  - `.agents/cache/`
   - `.agents/skills/`
   - `.claude/skills/`
 
@@ -40,6 +43,7 @@ skills:
 ## Manifest Rules
 
 - every source must have a `ref`
+- every project source must have a `url`
 - every skill must name a declared source
 - the same `(source, name)` pair cannot be declared twice
 

@@ -20,6 +20,7 @@ Cause:
 
 - the effective `.gitignore` does not ignore one or more managed runtime paths:
   - `.agents/state.yaml`
+  - `.agents/cache/`
   - `.agents/skills/`
   - `.claude/skills/`
 

@@ -36,14 +36,15 @@ skills:
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `url` | string | no | Scope-local source URL override |
+| `url` | string | yes for project mode | Source Git URL or local repo path |
 | `ref` | string | yes | Branch, tag, or commit to resolve |
 
 Notes:
 
 - alias validation uses the same rules as global config aliases
 - `ref` must not be empty
-- a source must either declare a `url` here or exist in global config
+- project mode requires `url` so the repo is self-contained
+- home/global mode can still use global source config
 
 ## `skills[]`
 

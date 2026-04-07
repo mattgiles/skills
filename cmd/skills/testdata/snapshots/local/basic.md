@@ -29,11 +29,11 @@ skills project sync --verbose
 ```stdout
 SOURCES
 SOURCE  STATUS  REF  COMMIT  STORED  REPO_PATH  WORKTREE_PATH  MESSAGE
-repo-one  resolved  main  <sha>  -  <data>/repos/repo-one  <data>/worktrees/project-<sha>/repo-one/<sha>  -
+repo-one  resolved  main  <sha>  -  <project>/.agents/cache/repos/repo-one  <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha>  -
 
 SKILLS
 SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE
-repo-one  analytics  created  <project>/.agents/skills/analytics  <data>/worktrees/project-<sha>/repo-one/<sha>/analytics  -
+repo-one  analytics  created  <project>/.agents/skills/analytics  <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha>/analytics  -
 
 CLAUDE
 SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE
@@ -50,11 +50,11 @@ skills project status --verbose
 ```stdout
 SOURCES
 SOURCE  STATUS  REF  COMMIT  STORED  REPO_PATH  WORKTREE_PATH  MESSAGE
-repo-one  up-to-date  main  <sha>  <sha>  <data>/repos/repo-one  <data>/worktrees/project-<sha>/repo-one/<sha>  -
+repo-one  up-to-date  main  <sha>  <sha>  <project>/.agents/cache/repos/repo-one  <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha>  -
 
 SKILLS
 SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE
-repo-one  analytics  linked  <project>/.agents/skills/analytics  <data>/worktrees/project-<sha>/repo-one/<sha>/analytics  -
+repo-one  analytics  linked  <project>/.agents/skills/analytics  <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha>/analytics  -
 
 CLAUDE
 SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE

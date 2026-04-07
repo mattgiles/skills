@@ -61,17 +61,12 @@ func newProjectStatusCommand() *cobra.Command {
 		Use:   "status",
 		Short: "Show source, canonical skill, and Claude adapter status for the current project",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-
 			projectDir, err := os.Getwd()
 			if err != nil {
 				return err
 			}
 
-			report, err := project.Status(context.Background(), projectDir, cfg)
+			report, err := project.Status(context.Background(), projectDir)
 			if err != nil {
 				return err
 			}
@@ -93,17 +88,12 @@ func newProjectSyncCommand() *cobra.Command {
 				return err
 			}
 
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-
 			projectDir, err := os.Getwd()
 			if err != nil {
 				return err
 			}
 
-			result, err := project.Sync(context.Background(), projectDir, cfg, project.SyncOptions{
+			result, err := project.Sync(context.Background(), projectDir, project.SyncOptions{
 				DryRun: dryRun,
 			})
 			if err != nil {
@@ -131,17 +121,12 @@ func newProjectUpdateCommand() *cobra.Command {
 				return err
 			}
 
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-
 			projectDir, err := os.Getwd()
 			if err != nil {
 				return err
 			}
 
-			result, err := project.Update(context.Background(), projectDir, cfg, project.UpdateOptions{
+			result, err := project.Update(context.Background(), projectDir, project.UpdateOptions{
 				SelectedSources: args,
 				Sync:            syncAfter,
 				DryRun:          dryRun,

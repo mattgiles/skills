@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -147,7 +148,7 @@ func TestDoctorProjectHealthy(t *testing.T) {
 		"SKILLS",
 		"CLAUDE",
 		"HINTS",
-		"config-missing",
+		"config-not-required",
 		"doctor: 0 errors, 0 warnings",
 	} {
 		if !strings.Contains(stdout, want) {
@@ -211,14 +212,13 @@ func TestDoctorConfigParseFailure(t *testing.T) {
 	mustWriteFile(t, configPath, "sources: [\n")
 
 	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "doctor", "--verbose")
-	if err == nil {
-		t.Fatalf("expected doctor error, stdout = %s, stderr = %s", stdout, stderr)
+	if err != nil {
+		t.Fatalf("project doctor should ignore global config parse failures, got err = %v, stderr = %s", err, stderr)
 	}
 
 	for _, want := range []string{
-		"config-parse-failed",
-		"global config could not be loaded",
-		"doctor: 1 errors, 2 warnings",
+		"project scope is self-contained",
+		"doctor: 0 errors, 2 warnings",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("stdout missing %q:\n%s", want, stdout)
@@ -278,6 +278,9 @@ func TestProjectInitCreatesStandardizedWorkspace(t *testing.T) {
 	for _, path := range []string{
 		filepath.Join(projectDir, ".agents", "manifest.yaml"),
 		filepath.Join(projectDir, ".agents", "skills"),
+		filepath.Join(projectDir, ".agents", "cache"),
+		filepath.Join(projectDir, ".agents", "cache", "repos"),
+		filepath.Join(projectDir, ".agents", "cache", "worktrees"),
 		filepath.Join(projectDir, ".claude", "skills"),
 		filepath.Join(projectDir, ".gitignore"),
 	} {
@@ -294,6 +297,7 @@ func TestProjectInitCreatesStandardizedWorkspace(t *testing.T) {
 		"# BEGIN skills managed runtime artifacts",
 		"/.agents/state.yaml",
 		"/.agents/skills/",
+		"/.agents/cache/",
 		"/.claude/skills/",
 		"# END skills managed runtime artifacts",
 	} {
@@ -341,6 +345,7 @@ func TestProjectInitUsesRepoRootGitignoreForNestedProject(t *testing.T) {
 		"# existing",
 		"/apps/nested/.agents/state.yaml",
 		"/apps/nested/.agents/skills/",
+		"/apps/nested/.agents/cache/",
 		"/apps/nested/.claude/skills/",
 	} {
 		if !strings.Contains(string(data), want) {
@@ -466,6 +471,80 @@ func TestDoctorErrorsWhenManagedPathsAreTracked(t *testing.T) {
 	}
 }
 
+func TestSkillsInitProjectFlagCreatesRepoLocalWorkspaceWithoutGlobalConfig(t *testing.T) {
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+
+	stdout, stderr, err := executeCommandInDirWithInput(t, env, projectDir, strings.NewReader(""), "init", "--project")
+	if err != nil {
+		t.Fatalf("skills init --project error = %v, stderr = %s", err, stderr)
+	}
+	for _, path := range []string{
+		filepath.Join(projectDir, ".agents", "manifest.yaml"),
+		filepath.Join(projectDir, ".agents", "cache", "repos"),
+		filepath.Join(projectDir, ".agents", "cache", "worktrees"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected path %q: %v", path, err)
+		}
+	}
+	if !strings.Contains(stdout, "created manifest:") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+}
+
+func TestSkillsInitFailsOutsideRepoWithoutExplicitScope(t *testing.T) {
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+
+	stdout, stderr, err := executeCommandInDirWithInput(t, env, projectDir, strings.NewReader(""), "init")
+	if err == nil {
+		t.Fatalf("expected skills init error, stdout = %s, stderr = %s", stdout, stderr)
+	}
+	if !strings.Contains(err.Error(), "outside a Git repo; use skills init --project or skills init --global") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSkillsInitFailsInsideRepoWithoutArtifactsWhenNonInteractive(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	repoRoot := t.TempDir()
+	initGitRepo(t, repoRoot)
+
+	stdout, stderr, err := executeCommandInDirWithInput(t, env, repoRoot, strings.NewReader(""), "init")
+	if err == nil {
+		t.Fatalf("expected skills init error, stdout = %s, stderr = %s", stdout, stderr)
+	}
+	if !strings.Contains(err.Error(), "inside a Git repo but no skills artifacts exist yet; use skills init --project or skills init --global") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSkillsInitRoutesToRepoRootWhenArtifactsExist(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	repoRoot := t.TempDir()
+	initGitRepo(t, repoRoot)
+
+	if _, stderr, err := executeCommandInDir(t, env, repoRoot, "project", "init"); err != nil {
+		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
+	}
+
+	nestedDir := filepath.Join(repoRoot, "nested", "app")
+	if err := os.MkdirAll(nestedDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", nestedDir, err)
+	}
+
+	stdout, stderr, err := executeCommandInDirWithInput(t, env, nestedDir, strings.NewReader(""), "init")
+	if err != nil {
+		t.Fatalf("skills init error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "manifest already exists: "+filepath.Join(resolvedPath(t, repoRoot), ".agents", "manifest.yaml")) {
+		t.Fatalf("stdout = %q", stdout)
+	}
+}
+
 func TestProjectSyncCreatesCanonicalAndClaudeLinks(t *testing.T) {
 	requireGit(t)
 	env := newTestEnv(t)
@@ -501,6 +580,7 @@ func TestProjectSyncCreatesCanonicalAndClaudeLinks(t *testing.T) {
 	}
 
 	wantTarget := filepath.Join(env.dataHome, "skills", "worktrees", projectID, "repo-one", commit, "analytics")
+	wantTarget = filepath.Join(resolvedProjectDir, ".agents", "cache", "worktrees", projectID, "repo-one", commit, "analytics")
 	if target != wantTarget {
 		t.Fatalf("canonical target = %q, want %q", target, wantTarget)
 	}
@@ -763,6 +843,10 @@ func executeCommand(t *testing.T, env testEnv, args ...string) (string, string, 
 }
 
 func executeCommandInDir(t *testing.T, env testEnv, dir string, args ...string) (string, string, error) {
+	return executeCommandInDirWithInput(t, env, dir, nil, args...)
+}
+
+func executeCommandInDirWithInput(t *testing.T, env testEnv, dir string, input io.Reader, args ...string) (string, string, error) {
 	t.Helper()
 
 	cmd := newRootCommand()
@@ -772,6 +856,9 @@ func executeCommandInDir(t *testing.T, env testEnv, dir string, args ...string) 
 	var stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
+	if input != nil {
+		cmd.SetIn(input)
+	}
 
 	t.Setenv("HOME", env.home)
 	t.Setenv("SKILLS_CONFIG_HOME", env.configHome)

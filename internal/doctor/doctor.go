@@ -83,24 +83,30 @@ func Check(ctx context.Context, cwd string, scope Scope) (Report, error) {
 		})
 	}
 
-	configPath, err := config.DefaultConfigPath()
-	if err != nil {
-		report.addFinding(Finding{
-			Section:  SectionConfig,
-			Severity: SeverityError,
-			Code:     "config-path-failed",
-			Subject:  "config",
-			Message:  err.Error(),
-		})
-		return report, nil
-	}
-
-	cfg, configUsable, configPaths := loadAndValidateConfig(&report, configPath)
-
 	switch scope {
 	case ScopeProject:
-		checkProjectWorkspace(ctx, &report, cwd, cfg, configUsable, gitAvailable)
+		report.addFinding(Finding{
+			Section:  SectionConfig,
+			Severity: SeverityInfo,
+			Code:     "config-not-required",
+			Subject:  "project scope",
+			Message:  "project scope is self-contained and does not require global config",
+		})
+		checkProjectWorkspace(ctx, &report, cwd, gitAvailable)
 	case ScopeGlobal:
+		configPath, err := config.DefaultConfigPath()
+		if err != nil {
+			report.addFinding(Finding{
+				Section:  SectionConfig,
+				Severity: SeverityError,
+				Code:     "config-path-failed",
+				Subject:  "config",
+				Message:  err.Error(),
+			})
+			return report, nil
+		}
+
+		cfg, configUsable, configPaths := loadAndValidateConfig(&report, configPath)
 		checkGlobalWorkspace(ctx, &report, cfg, configUsable, gitAvailable, configPaths)
 	default:
 		return Report{}, fmt.Errorf("unsupported doctor scope %q", scope)
@@ -322,7 +328,7 @@ func onlySectionErrors(report *Report, section string) int {
 	return count
 }
 
-func checkProjectWorkspace(ctx context.Context, report *Report, cwd string, cfg config.Config, configUsable bool, gitAvailable bool) {
+func checkProjectWorkspace(ctx context.Context, report *Report, cwd string, gitAvailable bool) {
 	report.Target = cwd
 	manifestPath := project.ManifestPath(cwd)
 	statePath := project.StatePath(cwd)
@@ -358,16 +364,12 @@ func checkProjectWorkspace(ctx context.Context, report *Report, cwd string, cfg 
 		})
 	}
 
-	if !configUsable {
-		addSkippedSections(report, "global config could not be loaded")
-		return
-	}
 	if !gitAvailable {
 		addSkippedSections(report, "git is not available")
 		return
 	}
 
-	status, err := project.Status(ctx, cwd, cfg)
+	status, err := project.Status(ctx, cwd)
 	if err != nil {
 		report.addFinding(Finding{
 			Section:  SectionWorkspace,

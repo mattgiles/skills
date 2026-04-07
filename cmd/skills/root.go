@@ -26,6 +26,7 @@ func newRootCommand() *cobra.Command {
 
 	cmd.PersistentFlags().Bool("verbose", false, "Show detailed diagnostic output")
 
+	cmd.AddCommand(newInitCommand())
 	cmd.AddCommand(newConfigCommand())
 	cmd.AddCommand(newDoctorCommand())
 	cmd.AddCommand(newSourceCommand())

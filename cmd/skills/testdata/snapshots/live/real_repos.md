@@ -20,11 +20,11 @@ skills project sync --verbose
 ```stdout
 SOURCES
 SOURCE  STATUS  REF  COMMIT  STORED  REPO_PATH  WORKTREE_PATH  MESSAGE
-dagster  resolved  master  <sha>  -  <data>/repos/dagster  <data>/worktrees/project-<sha>/dagster/<sha>  -
+dagster  resolved  master  <sha>  -  <project>/.agents/cache/repos/dagster  <project>/.agents/cache/worktrees/project-<sha>/dagster/<sha>  -
 
 SKILLS
 SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE
-dagster  dagster-expert  created  <project>/.agents/skills/dagster-expert  <data>/worktrees/project-<sha>/dagster/<sha>/skills/dagster-expert/skills/dagster-expert  -
+dagster  dagster-expert  created  <project>/.agents/skills/dagster-expert  <project>/.agents/cache/worktrees/project-<sha>/dagster/<sha>/skills/dagster-expert/skills/dagster-expert  -
 
 CLAUDE
 SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE
@@ -41,11 +41,11 @@ skills project status --verbose
 ```stdout
 SOURCES
 SOURCE  STATUS  REF  COMMIT  STORED  REPO_PATH  WORKTREE_PATH  MESSAGE
-dagster  up-to-date  master  <sha>  <sha>  <data>/repos/dagster  <data>/worktrees/project-<sha>/dagster/<sha>  -
+dagster  up-to-date  master  <sha>  <sha>  <project>/.agents/cache/repos/dagster  <project>/.agents/cache/worktrees/project-<sha>/dagster/<sha>  -
 
 SKILLS
 SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE
-dagster  dagster-expert  linked  <project>/.agents/skills/dagster-expert  <data>/worktrees/project-<sha>/dagster/<sha>/skills/dagster-expert/skills/dagster-expert  -
+dagster  dagster-expert  linked  <project>/.agents/skills/dagster-expert  <project>/.agents/cache/worktrees/project-<sha>/dagster/<sha>/skills/dagster-expert/skills/dagster-expert  -
 
 CLAUDE
 SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE
@@ -75,11 +75,11 @@ skills project sync --verbose
 ```stdout
 SOURCES
 SOURCE  STATUS  REF  COMMIT  STORED  REPO_PATH  WORKTREE_PATH  MESSAGE
-vercel  resolved  main  <sha>  -  <data>/repos/vercel  <data>/worktrees/project-<sha>/vercel/<sha>  -
+vercel  resolved  main  <sha>  -  <project>/.agents/cache/repos/vercel  <project>/.agents/cache/worktrees/project-<sha>/vercel/<sha>  -
 
 SKILLS
 SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE
-vercel  find-skills  created  <project>/.agents/skills/find-skills  <data>/worktrees/project-<sha>/vercel/<sha>/skills/find-skills  -
+vercel  find-skills  created  <project>/.agents/skills/find-skills  <project>/.agents/cache/worktrees/project-<sha>/vercel/<sha>/skills/find-skills  -
 
 CLAUDE
 SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE

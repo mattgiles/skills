@@ -6,6 +6,8 @@ Project scope now defaults to project-local canonical directories. You do not ne
 
 `skills project init` and `skills project sync` use:
 
+- `.agents/cache/repos/` for project-local canonical source clones
+- `.agents/cache/worktrees/` for project-local worktrees
 - `.agents/skills/<skill-name>` for canonical installed skills
 - `.claude/skills/<skill-name>` for Claude adapters
 
