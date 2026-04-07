@@ -2,7 +2,25 @@
 
 `skills` is a Go CLI for managing reusable agent skills from Git repositories.
 
-Project mode is self-contained: it keeps canonical source clones and pinned worktrees under `.agents/cache/` inside the repo, installs canonical links in `.agents/skills`, and manages `.claude/skills` adapter links for Claude compatibility. Home mode remains available for shared machine-level installs.
+It is designed to make skill installs reproducible and explicit:
+
+- sources come from Git
+- refs resolve to pinned commits
+- worktrees materialize those commits
+- installed skills are symlinks to those pinned worktrees, not mutable source clones
+
+`skills` supports two equally valid workflows:
+
+- repo-local: a project keeps its own manifest, cache, and installed skills inside the repo
+- global/home: a machine keeps shared sources, cache, and installed skills for reuse across many repos
+
+## Project Goals
+
+- Make agent skills easy to install from public or private Git repos.
+- Keep installs reproducible by resolving refs to concrete commits.
+- Separate tracked declarations from generated runtime state.
+- Support both self-contained project workflows and shared machine-level workflows.
+- Keep the resulting skill layout simple for downstream tools to consume.
 
 ## Install
 
@@ -20,33 +38,175 @@ Install a specific version:
 curl -fsSL https://raw.githubusercontent.com/mattgiles/skills/main/scripts/install.sh | VERSION=v0.1.0 sh
 ```
 
-The installer downloads a prebuilt binary from GitHub Releases, verifies its checksum, installs it into a writable directory already on `PATH` when possible, and falls back to a user-local bin directory with a clear `PATH` hint if needed.
+The installer downloads a prebuilt binary from GitHub Releases, verifies its checksum, and installs it into a writable directory already on `PATH` when possible.
 
-## Start Here
+Check the install:
+
+```bash
+skills version
+skills --help
+```
+
+## Initialize
+
+Inside a Git repo, `skills init` will prompt you to choose between repo-local and global initialization if the repo does not already contain `skills` artifacts.
+
+You can always choose explicitly:
+
+```bash
+skills init --project
+skills init --global
+```
+
+## Quickstart
+
+### Repo-Local Workflow
+
+Use this when you want a repo to be self-contained and not depend on machine-level `skills` setup.
+
+Initialize the project:
+
+```bash
+skills init --project
+```
+
+That creates:
+
+- `.agents/manifest.yaml`
+- `.agents/cache/repos/`
+- `.agents/cache/worktrees/`
+- `.agents/skills/`
+- `.claude/skills/`
+
+It also ensures generated runtime paths are gitignored:
+
+- `.agents/state.yaml`
+- `.agents/cache/`
+- `.agents/skills/`
+- `.claude/skills/`
+
+Add a source and a skill by editing `.agents/manifest.yaml`:
+
+```yaml
+sources:
+  repo-one:
+    url: git@github.com:example/repo-one.git
+    ref: main
+
+skills:
+  - source: repo-one
+    name: analytics
+```
+
+Sync the project:
+
+```bash
+skills project sync
+```
+
+Inspect the result:
+
+```bash
+skills project status
+skills doctor
+```
+
+Repo-local installs are canonical symlinks in `.agents/skills/`, backed by pinned worktrees in `.agents/cache/worktrees/`.
+
+### Global / Home Workflow
+
+Use this when you want one machine-level skill installation shared across multiple repos.
+
+Initialize the shared home workspace:
+
+```bash
+skills init --global
+```
+
+Create or inspect global config when you want to customize storage roots or shared install locations:
+
+```bash
+skills config init
+```
+
+Register a source alias in global config:
+
+```bash
+skills source add repo-one git@github.com:example/repo-one.git
+```
+
+Sync the canonical local source clone:
+
+```bash
+skills source sync
+```
+
+Edit `~/.agents/manifest.yaml`:
+
+```yaml
+sources:
+  repo-one:
+    ref: main
+
+skills:
+  - source: repo-one
+    name: analytics
+```
+
+Sync shared home installs:
+
+```bash
+skills home sync
+```
+
+Inspect the result:
+
+```bash
+skills home status
+skills doctor --global
+```
+
+Global installs live in `~/.agents/skills/` by default, with Claude adapter links in `~/.claude/skills/`.
+
+## Adding And Syncing Skills
+
+The lifecycle is the same in both workflows:
+
+1. declare the source and desired skills
+2. resolve each source ref to a concrete commit
+3. materialize that commit in a worktree
+4. create canonical symlinks in `.agents/skills` or `~/.agents/skills`
+5. create Claude adapter links in `.claude/skills` or `~/.claude/skills`
+
+When you want newer commits for the same refs, run:
+
+```bash
+skills project update --sync
+skills home update --sync
+```
+
+## Repo-Local vs Global
+
+Choose repo-local when:
+
+- the repo should be self-contained
+- other contributors should not need machine-level `skills` setup
+- you want cache and install state isolated to one project
+
+Choose global/home when:
+
+- you want one shared install for many repos
+- you prefer a machine-level source registry
+- you want shared clone and worktree storage outside individual repos
+
+You can use both. A repo-local workflow does not require global config, and a global/home workflow does not prevent using repo-local installs in specific repos.
+
+## Documentation
 
 - [Documentation Home](docs/index.md)
 - [Tutorial: First Project Sync](docs/tutorials/first-project.md)
-- [How-to: Set Up Global Config](docs/how-to/set-up-global-config.md)
 - [How-to: Install The CLI](docs/how-to/install-the-cli.md)
-- [How-to: Release A Version](docs/how-to/release-a-version.md)
+- [How-to: Set Up Global Config](docs/how-to/set-up-global-config.md)
+- [How-to: Add And Sync A Source](docs/how-to/add-and-sync-a-source.md)
 - [Reference: CLI](docs/reference/cli.md)
 - [Reference: Project Manifest](docs/reference/project-manifest.md)
-
-## Standard Model
-
-- Project scope:
-  - `.agents/manifest.yaml`
-  - `.agents/state.yaml` as generated runtime state
-  - `.agents/cache/repos/`
-  - `.agents/cache/worktrees/`
-  - `.agents/skills/<skill-name>`
-  - `.claude/skills/<skill-name>`
-- Home scope:
-  - `~/.agents/manifest.yaml`
-  - `~/.agents/state.yaml`
-  - `~/.agents/skills/<skill-name>`
-  - `~/.claude/skills/<skill-name>`
-
-In both scopes, canonical skill links point to pinned worktree directories, not directly to mutable source clones.
-
-In project scope, `skills project init` also ensures the generated runtime artifacts are gitignored. The tracked project input is `.agents/manifest.yaml`; `.agents/state.yaml`, `.agents/cache/`, `.agents/skills/`, and `.claude/skills/` are managed runtime paths.
