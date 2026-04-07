@@ -135,7 +135,20 @@ func fetch(ctx context.Context, src Source) error {
 }
 
 func ResolveCommit(ctx context.Context, src Source, ref string) (string, error) {
-	return gitOutput(ctx, "", "-C", src.RepoPath, "rev-parse", ref+"^{commit}")
+	candidates := []string{
+		"refs/remotes/origin/" + ref,
+		"refs/tags/" + ref,
+		ref,
+	}
+
+	for _, candidate := range candidates {
+		commit, err := gitOutput(ctx, "", "-C", src.RepoPath, "rev-parse", candidate+"^{commit}")
+		if err == nil {
+			return commit, nil
+		}
+	}
+
+	return "", fmt.Errorf("could not resolve ref %q to a commit", ref)
 }
 
 func ListFilesAtCommit(ctx context.Context, src Source, commit string) ([]string, error) {

@@ -45,7 +45,14 @@ type ProjectSkill struct {
 }
 
 type State struct {
-	Links []ManagedLink `yaml:"links,omitempty"`
+	Sources []ProjectSourceState `yaml:"sources,omitempty"`
+	Links   []ManagedLink        `yaml:"links,omitempty"`
+}
+
+type ProjectSourceState struct {
+	Source         string `yaml:"source"`
+	Ref            string `yaml:"ref"`
+	ResolvedCommit string `yaml:"resolved_commit"`
 }
 
 type ManagedLink struct {
@@ -63,30 +70,54 @@ type StatusReport struct {
 }
 
 type SourceReport struct {
-	Alias   string
-	Ref     string
-	Status  string
-	Commit  string
-	Message string
+	Alias          string
+	Ref            string
+	Commit         string
+	PreviousCommit string
+	Status         string
+	Message        string
 }
 
 type LinkReport struct {
-	Source string
-	Skill  string
-	Agent  string
-	Path   string
-	Target string
-	Status string
+	Source  string
+	Skill   string
+	Agent   string
+	Path    string
+	Target  string
+	Status  string
+	Message string
 }
 
 type SyncResult struct {
 	Sources []SourceReport
 	Links   []LinkReport
 	Pruned  []string
+	DryRun  bool
+}
+
+type UpdateResult struct {
+	Sources []SourceReport
+	Sync    *SyncResult
+	DryRun  bool
+}
+
+type SyncOptions struct {
+	DryRun bool
+}
+
+type UpdateOptions struct {
+	SelectedSources []string
+	Sync            bool
+	DryRun          bool
 }
 
 type desiredLink struct {
 	ManagedLink
+}
+
+type linkAction struct {
+	Link   desiredLink
+	Status string
 }
 
 type resolvedSource struct {
@@ -96,9 +127,12 @@ type resolvedSource struct {
 	RepoPath     string
 	WorktreeRoot string
 	ProjectID    string
-	Commit       string
-	WorktreePath string
-	SkillsByName map[string][]discovery.DiscoveredSkill
+
+	StoredCommit  string
+	CurrentCommit string
+	DesiredCommit string
+	WorktreePath  string
+	SkillsByName  map[string][]discovery.DiscoveredSkill
 }
 
 type resolvedAgent struct {
@@ -263,143 +297,228 @@ func ProjectID(projectDir string) (string, error) {
 }
 
 func Status(ctx context.Context, projectDir string, cfg config.Config) (StatusReport, error) {
-	manifest, err := LoadManifest(projectDir)
+	manifest, state, resolvedSources, agents, err := loadProjectInputs(projectDir, cfg)
 	if err != nil {
 		return StatusReport{}, err
 	}
 
-	state, err := LoadState(projectDir)
+	stateSources := sourceStateMap(state)
+	stateLinks := managedLinkMap(state)
+
+	sourceReports, err := resolveSourcesForStatus(ctx, resolvedSources, stateSources)
 	if err != nil {
 		return StatusReport{}, err
 	}
 
-	worktreeRoot, err := config.WorktreeRootPath(cfg)
-	if err != nil {
-		return StatusReport{}, err
-	}
+	desiredLinks, linkReports := buildLinkReports(resolvedSources, agents, manifest, stateLinks, false)
+	desiredByPath := desiredLinkMap(desiredLinks)
+	stale := staleLinks(state, desiredByPath)
 
-	resolvedSources, agents, err := resolveInputs(projectDir, cfg, manifest, worktreeRoot)
-	if err != nil {
-		return StatusReport{}, err
-	}
-
-	report := StatusReport{
-		Sources: make([]SourceReport, 0, len(resolvedSources)),
-		Links:   make([]LinkReport, 0),
-	}
-
-	desiredLinks, sourceReports, linkReports, err := planLinks(ctx, resolvedSources, agents, manifest, false)
-	if err != nil {
-		return StatusReport{}, err
-	}
-	report.Sources = append(report.Sources, sourceReports...)
-	report.Links = append(report.Links, linkReports...)
-
-	desiredByPath := map[string]desiredLink{}
-	for _, link := range desiredLinks {
-		desiredByPath[link.Path] = link
-	}
-
-	for _, stale := range staleLinks(state, desiredByPath) {
-		report.StaleLinks = append(report.StaleLinks, stale)
-	}
-
-	sortSourceReports(report.Sources)
-	sortLinkReports(report.Links)
-	sort.Slice(report.StaleLinks, func(i, j int) bool {
-		return report.StaleLinks[i].Path < report.StaleLinks[j].Path
+	sortSourceReports(sourceReports)
+	sortLinkReports(linkReports)
+	sort.Slice(stale, func(i, j int) bool {
+		return stale[i].Path < stale[j].Path
 	})
 
-	return report, nil
+	return StatusReport{
+		Sources:    sourceReports,
+		Links:      linkReports,
+		StaleLinks: stale,
+	}, nil
 }
 
-func Sync(ctx context.Context, projectDir string, cfg config.Config) (SyncResult, error) {
-	manifest, err := LoadManifest(projectDir)
+func Sync(ctx context.Context, projectDir string, cfg config.Config, options SyncOptions) (SyncResult, error) {
+	manifest, state, resolvedSources, agents, err := loadProjectInputs(projectDir, cfg)
 	if err != nil {
 		return SyncResult{}, err
+	}
+
+	return syncWithState(ctx, projectDir, manifest, state, resolvedSources, agents, options)
+}
+
+func Update(ctx context.Context, projectDir string, cfg config.Config, options UpdateOptions) (UpdateResult, error) {
+	manifest, state, resolvedSources, agents, err := loadProjectInputs(projectDir, cfg)
+	if err != nil {
+		return UpdateResult{}, err
+	}
+
+	selected, err := selectResolvedSources(resolvedSources, options.SelectedSources)
+	if err != nil {
+		return UpdateResult{}, err
+	}
+
+	stateSources := sourceStateMap(state)
+	reports, nextSourceStates, err := resolveSourcesForUpdate(ctx, selected, stateSources)
+	if err != nil {
+		return UpdateResult{}, err
+	}
+
+	result := UpdateResult{
+		Sources: reports,
+		DryRun:  options.DryRun,
+	}
+
+	if options.Sync {
+		nextState := mergeSourceStates(state, nextSourceStates, nil)
+		syncResult, err := syncWithState(ctx, projectDir, manifest, nextState, resolvedSources, agents, SyncOptions{DryRun: options.DryRun})
+		if err != nil {
+			return UpdateResult{}, err
+		}
+		result.Sync = &syncResult
+		return result, nil
+	}
+
+	if !options.DryRun {
+		nextState := mergeSourceStates(state, nextSourceStates, nil)
+		if err := SaveState(projectDir, nextState); err != nil {
+			return UpdateResult{}, err
+		}
+	}
+
+	sortSourceReports(result.Sources)
+	return result, nil
+}
+
+func loadProjectInputs(projectDir string, cfg config.Config) (Manifest, State, map[string]*resolvedSource, map[string]resolvedAgent, error) {
+	manifest, err := LoadManifest(projectDir)
+	if err != nil {
+		return Manifest{}, State{}, nil, nil, err
 	}
 
 	state, err := LoadState(projectDir)
 	if err != nil {
-		return SyncResult{}, err
+		return Manifest{}, State{}, nil, nil, err
 	}
 
 	worktreeRoot, err := config.WorktreeRootPath(cfg)
 	if err != nil {
-		return SyncResult{}, err
+		return Manifest{}, State{}, nil, nil, err
 	}
 
 	resolvedSources, agents, err := resolveInputs(projectDir, cfg, manifest, worktreeRoot)
 	if err != nil {
-		return SyncResult{}, err
+		return Manifest{}, State{}, nil, nil, err
 	}
 
-	desiredLinks, sourceReports, linkReports, err := planLinks(ctx, resolvedSources, agents, manifest, true)
+	return manifest, state, resolvedSources, agents, nil
+}
+
+func syncWithState(ctx context.Context, projectDir string, manifest Manifest, state State, resolvedSources map[string]*resolvedSource, agents map[string]resolvedAgent, options SyncOptions) (SyncResult, error) {
+	stateSources := sourceStateMap(state)
+	stateLinks := managedLinkMap(state)
+
+	sourceReports, sourceStates, err := resolveSourcesForSync(ctx, resolvedSources, stateSources)
 	if err != nil {
 		return SyncResult{}, err
 	}
 
-	desiredByPath := map[string]desiredLink{}
-	for _, link := range desiredLinks {
-		if _, ok := desiredByPath[link.Path]; ok {
-			return SyncResult{}, fmt.Errorf("multiple skills want the same destination path: %s", link.Path)
-		}
-		desiredByPath[link.Path] = link
+	desiredLinks, linkReports := buildLinkReports(resolvedSources, agents, manifest, stateLinks, true)
+	if err := validateDesiredLinks(desiredLinks); err != nil {
+		return SyncResult{}, err
 	}
-
-	stateByPath := map[string]ManagedLink{}
-	for _, link := range state.Links {
-		stateByPath[link.Path] = link
-	}
-
-	prune := staleLinks(state, desiredByPath)
-	if err := validateLinkPlan(desiredLinks, prune, stateByPath); err != nil {
+	if err := fatalLinkReports(linkReports); err != nil {
 		return SyncResult{}, err
 	}
 
-	for _, src := range resolvedSources {
+	actions, err := planLinkActions(desiredLinks, stateLinks)
+	if err != nil {
+		return SyncResult{}, err
+	}
+
+	actionByPath := map[string]string{}
+	for _, action := range actions {
+		actionByPath[action.Link.Path] = action.Status
+	}
+	for i := range linkReports {
+		if planned, ok := actionByPath[linkReports[i].Path]; ok {
+			if options.DryRun {
+				linkReports[i].Status = dryRunLinkStatus(planned)
+			} else {
+				linkReports[i].Status = planned
+			}
+		}
+	}
+
+	desiredByPath := desiredLinkMap(desiredLinks)
+	stale := staleLinks(state, desiredByPath)
+	prunedPaths := make([]string, 0, len(stale))
+	for _, link := range stale {
+		prunedPaths = append(prunedPaths, link.Path)
+	}
+	sort.Strings(prunedPaths)
+
+	if options.DryRun {
+		result := SyncResult{
+			Sources: sourceReports,
+			Links:   linkReports,
+			Pruned:  prunedPaths,
+			DryRun:  true,
+		}
+		sortSourceReports(result.Sources)
+		sortLinkReports(result.Links)
+		return result, nil
+	}
+
+	for _, src := range sortedResolvedSources(resolvedSources) {
+		if strings.TrimSpace(src.DesiredCommit) == "" {
+			continue
+		}
 		if _, err := source.EnsureWorktree(ctx, source.Source{
 			Alias:    src.Alias,
 			URL:      src.URL,
 			RepoPath: src.RepoPath,
-		}, src.WorktreePath, src.Commit); err != nil {
+		}, src.WorktreePath, src.DesiredCommit); err != nil {
 			return SyncResult{}, err
 		}
 	}
 
-	for i, link := range desiredLinks {
-		action, err := applyDesiredLink(link, stateByPath)
-		if err != nil {
-			return SyncResult{}, err
+	for _, action := range actions {
+		switch action.Status {
+		case "linked":
+			continue
+		case "created":
+			if err := createSymlink(action.Link); err != nil {
+				return SyncResult{}, err
+			}
+		case "updated":
+			if err := replaceSymlink(action.Link); err != nil {
+				return SyncResult{}, err
+			}
+		default:
+			return SyncResult{}, fmt.Errorf("unexpected link action %q", action.Status)
 		}
-		linkReports[i].Status = action
 	}
 
-	prunedPaths := make([]string, 0, len(prune))
-	for _, stale := range prune {
-		if err := removeManagedLink(stale); err != nil {
+	for _, link := range stale {
+		if err := removeManagedLink(link); err != nil {
 			return SyncResult{}, err
 		}
-		prunedPaths = append(prunedPaths, stale.Path)
 	}
 
-	newState := State{Links: make([]ManagedLink, 0, len(desiredLinks))}
+	nextState := State{
+		Sources: sourceStates,
+		Links:   make([]ManagedLink, 0, len(desiredLinks)),
+	}
 	for _, link := range desiredLinks {
-		newState.Links = append(newState.Links, link.ManagedLink)
+		nextState.Links = append(nextState.Links, link.ManagedLink)
 	}
-	if err := SaveState(projectDir, newState); err != nil {
+
+	if err := SaveState(projectDir, nextState); err != nil {
 		return SyncResult{}, err
 	}
 
-	sortSourceReports(sourceReports)
-	sortLinkReports(linkReports)
-	sort.Strings(prunedPaths)
+	for i := range sourceReports {
+		sourceReports[i].Status = syncSourceStatus(sourceReports[i].Status)
+	}
 
-	return SyncResult{
+	result := SyncResult{
 		Sources: sourceReports,
 		Links:   linkReports,
 		Pruned:  prunedPaths,
-	}, nil
+	}
+	sortSourceReports(result.Sources)
+	sortLinkReports(result.Links)
+	return result, nil
 }
 
 func resolveInputs(projectDir string, cfg config.Config, manifest Manifest, worktreeRoot string) (map[string]*resolvedSource, map[string]resolvedAgent, error) {
@@ -465,101 +584,285 @@ func resolveInputs(projectDir string, cfg config.Config, manifest Manifest, work
 	return resolvedSources, agents, nil
 }
 
-func planLinks(ctx context.Context, resolvedSources map[string]*resolvedSource, agents map[string]resolvedAgent, manifest Manifest, mutate bool) ([]desiredLink, []SourceReport, []LinkReport, error) {
-	sourceReports := make([]SourceReport, 0, len(resolvedSources))
+func resolveSourcesForStatus(ctx context.Context, resolvedSources map[string]*resolvedSource, stateSources map[string]ProjectSourceState) ([]SourceReport, error) {
+	reports := make([]SourceReport, 0, len(resolvedSources))
 
 	for _, src := range sortedResolvedSources(resolvedSources) {
-		srcStatus := source.Status(ctx, source.Source{
-			Alias:    src.Alias,
-			URL:      src.URL,
-			RepoPath: src.RepoPath,
-		})
+		prev, hasPrev := stateSources[src.Alias]
+		src.StoredCommit = prev.ResolvedCommit
 
+		status, err := ensureSourceAvailable(ctx, src, false, true)
 		report := SourceReport{
-			Alias: src.Alias,
-			Ref:   src.Ref,
+			Alias:          src.Alias,
+			Ref:            src.Ref,
+			PreviousCommit: shortCommit(prev.ResolvedCommit),
+		}
+		if err != nil {
+			return nil, err
 		}
 
-		if !srcStatus.Exists {
-			if !mutate {
-				report.Status = "missing-source"
-				report.Message = "canonical source repo is not cloned"
-				sourceReports = append(sourceReports, report)
-				continue
-			}
-
-			if _, err := source.Sync(ctx, source.Source{
-				Alias:    src.Alias,
-				URL:      src.URL,
-				RepoPath: src.RepoPath,
-			}); err != nil {
-				return nil, nil, nil, fmt.Errorf("sync source %s: %w", src.Alias, err)
-			}
-			srcStatus = source.Status(ctx, source.Source{
-				Alias:    src.Alias,
-				URL:      src.URL,
-				RepoPath: src.RepoPath,
-			})
-		} else if mutate {
-			if _, err := source.Sync(ctx, source.Source{
-				Alias:    src.Alias,
-				URL:      src.URL,
-				RepoPath: src.RepoPath,
-			}); err != nil {
-				return nil, nil, nil, fmt.Errorf("sync source %s: %w", src.Alias, err)
-			}
-		}
-
-		if !srcStatus.IsGitRepo {
+		switch {
+		case !status.Exists:
+			report.Status = "missing-source"
+			report.Message = "canonical source repo is not cloned"
+		case !status.IsGitRepo:
 			report.Status = "invalid-source"
-			report.Message = srcStatus.LastError
-			sourceReports = append(sourceReports, report)
-			continue
+			report.Message = status.LastError
+		default:
+			commit, err := source.ResolveCommit(ctx, source.Source{
+				Alias:    src.Alias,
+				URL:      src.URL,
+				RepoPath: src.RepoPath,
+			}, src.Ref)
+			if err != nil {
+				report.Status = "invalid-ref"
+				report.Message = err.Error()
+			} else {
+				src.CurrentCommit = commit
+				report.Commit = shortCommit(commit)
+				switch {
+				case !hasPrev || strings.TrimSpace(prev.ResolvedCommit) == "":
+					report.Status = "not-synced"
+					report.Message = "run project sync or project update"
+				case prev.Ref != src.Ref:
+					report.Status = "update-available"
+					report.Message = "state recorded for ref " + prev.Ref
+				case prev.ResolvedCommit != commit:
+					report.Status = "update-available"
+					report.Message = "last resolved " + shortCommit(prev.ResolvedCommit)
+				default:
+					report.Status = "up-to-date"
+				}
+			}
 		}
 
-		commit, err := source.ResolveCommit(ctx, source.Source{
-			Alias:    src.Alias,
-			URL:      src.URL,
-			RepoPath: src.RepoPath,
-		}, src.Ref)
-		if err != nil {
-			report.Status = "invalid-ref"
-			report.Message = err.Error()
-			sourceReports = append(sourceReports, report)
-			continue
+		setDesiredCommitForStatus(src, hasPrev, prev)
+		if strings.TrimSpace(src.DesiredCommit) != "" {
+			src.WorktreePath = source.WorktreePath(src.WorktreeRoot, src.ProjectID, src.Alias, src.DesiredCommit)
+			src.SkillsByName = loadSkillsForCommit(ctx, src)
 		}
 
-		src.Commit = commit
-		src.WorktreePath = source.WorktreePath(src.WorktreeRoot, src.ProjectID, src.Alias, commit)
-
-		paths, err := source.ListFilesAtCommit(ctx, source.Source{
-			Alias:    src.Alias,
-			URL:      src.URL,
-			RepoPath: src.RepoPath,
-		}, commit)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-
-		skills := discovery.DiscoverFromPaths(src.Alias, src.WorktreePath, paths)
-		src.SkillsByName = map[string][]discovery.DiscoveredSkill{}
-		for _, skill := range skills {
-			src.SkillsByName[skill.Name] = append(src.SkillsByName[skill.Name], skill)
-		}
-
-		report.Status = "ready"
-		report.Commit = shortCommit(commit)
-		sourceReports = append(sourceReports, report)
+		reports = append(reports, report)
 	}
 
-	links := make([]desiredLink, 0)
-	linkReports := make([]LinkReport, 0)
+	return reports, nil
+}
+
+func resolveSourcesForSync(ctx context.Context, resolvedSources map[string]*resolvedSource, stateSources map[string]ProjectSourceState) ([]SourceReport, []ProjectSourceState, error) {
+	reports := make([]SourceReport, 0, len(resolvedSources))
+	nextStates := make([]ProjectSourceState, 0, len(resolvedSources))
+
+	for _, src := range sortedResolvedSources(resolvedSources) {
+		prev, hasPrev := stateSources[src.Alias]
+		src.StoredCommit = prev.ResolvedCommit
+
+		status, err := ensureSourceAvailable(ctx, src, true, true)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		report := SourceReport{
+			Alias:          src.Alias,
+			Ref:            src.Ref,
+			PreviousCommit: shortCommit(prev.ResolvedCommit),
+		}
+
+		switch {
+		case !status.Exists:
+			report.Status = "missing-source"
+			report.Message = "canonical source repo is not cloned"
+		case !status.IsGitRepo:
+			report.Status = "invalid-source"
+			report.Message = status.LastError
+		default:
+			useStored := hasPrev && prev.Ref == src.Ref && strings.TrimSpace(prev.ResolvedCommit) != ""
+			if useStored {
+				src.DesiredCommit = prev.ResolvedCommit
+				report.Commit = shortCommit(prev.ResolvedCommit)
+				report.Status = "up-to-date"
+			} else {
+				commit, err := source.ResolveCommit(ctx, source.Source{
+					Alias:    src.Alias,
+					URL:      src.URL,
+					RepoPath: src.RepoPath,
+				}, src.Ref)
+				if err != nil {
+					report.Status = "invalid-ref"
+					report.Message = err.Error()
+				} else {
+					src.CurrentCommit = commit
+					src.DesiredCommit = commit
+					report.Commit = shortCommit(commit)
+					report.Status = "not-synced"
+					if hasPrev && prev.Ref == src.Ref && prev.ResolvedCommit != commit && prev.ResolvedCommit != "" {
+						report.Status = "update-available"
+						report.Message = "stored " + shortCommit(prev.ResolvedCommit)
+					}
+				}
+			}
+		}
+
+		if strings.TrimSpace(src.DesiredCommit) != "" {
+			src.WorktreePath = source.WorktreePath(src.WorktreeRoot, src.ProjectID, src.Alias, src.DesiredCommit)
+			src.SkillsByName = loadSkillsForCommit(ctx, src)
+			nextStates = append(nextStates, ProjectSourceState{
+				Source:         src.Alias,
+				Ref:            src.Ref,
+				ResolvedCommit: src.DesiredCommit,
+			})
+		}
+
+		reports = append(reports, report)
+	}
+
+	if err := fatalSourceReports(reports); err != nil {
+		return nil, nil, err
+	}
+
+	return reports, nextStates, nil
+}
+
+func resolveSourcesForUpdate(ctx context.Context, resolvedSources map[string]*resolvedSource, stateSources map[string]ProjectSourceState) ([]SourceReport, []ProjectSourceState, error) {
+	reports := make([]SourceReport, 0, len(resolvedSources))
+	nextStates := make([]ProjectSourceState, 0, len(resolvedSources))
+
+	for _, src := range sortedResolvedSources(resolvedSources) {
+		prev, hasPrev := stateSources[src.Alias]
+
+		status, err := ensureSourceAvailable(ctx, src, true, true)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		report := SourceReport{
+			Alias:          src.Alias,
+			Ref:            src.Ref,
+			PreviousCommit: shortCommit(prev.ResolvedCommit),
+		}
+
+		switch {
+		case !status.Exists:
+			report.Status = "missing-source"
+			report.Message = "canonical source repo is not cloned"
+		case !status.IsGitRepo:
+			report.Status = "invalid-source"
+			report.Message = status.LastError
+		default:
+			commit, err := source.ResolveCommit(ctx, source.Source{
+				Alias:    src.Alias,
+				URL:      src.URL,
+				RepoPath: src.RepoPath,
+			}, src.Ref)
+			if err != nil {
+				report.Status = "invalid-ref"
+				report.Message = err.Error()
+			} else {
+				src.CurrentCommit = commit
+				report.Commit = shortCommit(commit)
+				switch {
+				case !hasPrev || strings.TrimSpace(prev.ResolvedCommit) == "":
+					report.Status = "resolved"
+				case prev.Ref != src.Ref || prev.ResolvedCommit != commit:
+					report.Status = "updated"
+					if prev.ResolvedCommit != "" {
+						report.Message = shortCommit(prev.ResolvedCommit) + " -> " + shortCommit(commit)
+					}
+				default:
+					report.Status = "up-to-date"
+				}
+
+				nextStates = append(nextStates, ProjectSourceState{
+					Source:         src.Alias,
+					Ref:            src.Ref,
+					ResolvedCommit: commit,
+				})
+			}
+		}
+
+		reports = append(reports, report)
+	}
+
+	if err := fatalSourceReports(reports); err != nil {
+		return nil, nil, err
+	}
+
+	sortSourceReports(reports)
+	return reports, nextStates, nil
+}
+
+func ensureSourceAvailable(ctx context.Context, src *resolvedSource, cloneMissing bool, fetchExisting bool) (source.SourceStatus, error) {
+	srcDef := source.Source{
+		Alias:    src.Alias,
+		URL:      src.URL,
+		RepoPath: src.RepoPath,
+	}
+
+	status := source.Status(ctx, srcDef)
+	if !status.Exists {
+		if !cloneMissing {
+			return status, nil
+		}
+		if _, err := source.Sync(ctx, srcDef); err != nil {
+			return source.SourceStatus{}, fmt.Errorf("sync source %s: %w", src.Alias, err)
+		}
+		return source.Status(ctx, srcDef), nil
+	}
+
+	if !status.IsGitRepo {
+		return status, nil
+	}
+
+	if fetchExisting {
+		if _, err := source.Sync(ctx, srcDef); err != nil {
+			return source.SourceStatus{}, fmt.Errorf("sync source %s: %w", src.Alias, err)
+		}
+		return source.Status(ctx, srcDef), nil
+	}
+
+	return status, nil
+}
+
+func setDesiredCommitForStatus(src *resolvedSource, hasPrev bool, prev ProjectSourceState) {
+	switch {
+	case hasPrev && prev.Ref == src.Ref && strings.TrimSpace(prev.ResolvedCommit) != "":
+		src.DesiredCommit = prev.ResolvedCommit
+	case strings.TrimSpace(src.CurrentCommit) != "":
+		src.DesiredCommit = src.CurrentCommit
+	default:
+		src.DesiredCommit = ""
+	}
+}
+
+func loadSkillsForCommit(ctx context.Context, src *resolvedSource) map[string][]discovery.DiscoveredSkill {
+	skillsByName := map[string][]discovery.DiscoveredSkill{}
+	if strings.TrimSpace(src.DesiredCommit) == "" {
+		return skillsByName
+	}
+
+	paths, err := source.ListFilesAtCommit(ctx, source.Source{
+		Alias:    src.Alias,
+		URL:      src.URL,
+		RepoPath: src.RepoPath,
+	}, src.DesiredCommit)
+	if err != nil {
+		return skillsByName
+	}
+
+	for _, skill := range discovery.DiscoverFromPaths(src.Alias, src.WorktreePath, paths) {
+		skillsByName[skill.Name] = append(skillsByName[skill.Name], skill)
+	}
+	return skillsByName
+}
+
+func buildLinkReports(resolvedSources map[string]*resolvedSource, agents map[string]resolvedAgent, manifest Manifest, stateLinks map[string]ManagedLink, forSync bool) ([]desiredLink, []LinkReport) {
+	desired := make([]desiredLink, 0)
+	reports := make([]LinkReport, 0)
 
 	for _, skill := range manifest.Skills {
 		src := resolvedSources[skill.Source]
 		for _, agentName := range skill.Agents {
 			agent := agents[agentName]
-			linkReport := LinkReport{
+			report := LinkReport{
 				Source: skill.Source,
 				Skill:  skill.Name,
 				Agent:  agentName,
@@ -568,26 +871,25 @@ func planLinks(ctx context.Context, resolvedSources map[string]*resolvedSource, 
 
 			switch {
 			case src == nil:
-				linkReport.Status = "unknown-source"
-			case src.Commit == "":
-				linkReport.Status = "source-not-ready"
+				report.Status = "unknown-source"
+				report.Message = "source is not declared"
+			case strings.TrimSpace(src.DesiredCommit) == "":
+				report.Status = "source-not-ready"
 			default:
 				matches := src.SkillsByName[skill.Name]
-				if len(matches) == 0 {
-					linkReport.Status = "missing-skill"
-				} else if len(matches) > 1 {
-					linkReport.Status = "ambiguous-skill"
-				} else {
+				switch {
+				case len(matches) == 0:
+					report.Status = "missing-skill"
+				case len(matches) > 1:
+					report.Status = "ambiguous-skill"
+					report.Message = "multiple skills share this directory name"
+				default:
 					target := filepath.Join(src.WorktreePath, matches[0].RelativePath)
-					linkReport.Target = target
-					if mutate {
-						linkReport.Status = "pending"
-					} else {
-						linkReport.Status = currentLinkStatus(linkReport.Path, target)
-					}
-					links = append(links, desiredLink{
+					report.Target = target
+					report.Status = currentLinkStatus(report.Path, target, stateLinks)
+					desired = append(desired, desiredLink{
 						ManagedLink: ManagedLink{
-							Path:   linkReport.Path,
+							Path:   report.Path,
 							Target: target,
 							Source: skill.Source,
 							Skill:  skill.Name,
@@ -597,66 +899,44 @@ func planLinks(ctx context.Context, resolvedSources map[string]*resolvedSource, 
 				}
 			}
 
-			linkReports = append(linkReports, linkReport)
+			reports = append(reports, report)
 		}
 	}
 
-	return links, sourceReports, linkReports, nil
+	if forSync {
+		_ = fatalLinkReports(reports)
+	}
+
+	sortLinkReports(reports)
+	return desired, reports
 }
 
-func validateLinkPlan(desired []desiredLink, stale []ManagedLink, stateByPath map[string]ManagedLink) error {
-	for _, link := range desired {
-		info, err := os.Lstat(link.Path)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
+func validateDesiredLinks(links []desiredLink) error {
+	seen := map[string]struct{}{}
+	for _, link := range links {
+		if _, ok := seen[link.Path]; ok {
+			return fmt.Errorf("multiple skills want the same destination path: %s", link.Path)
 		}
-		if err != nil {
-			return err
-		}
-
-		if info.Mode()&os.ModeSymlink == 0 {
-			return fmt.Errorf("destination exists and is not a symlink: %s", link.Path)
-		}
-
-		currentTarget, err := os.Readlink(link.Path)
-		if err != nil {
-			return err
-		}
-		if currentTarget == link.Target {
-			continue
-		}
-
-		if _, ok := stateByPath[link.Path]; !ok {
-			return fmt.Errorf("destination is an unmanaged symlink: %s", link.Path)
-		}
+		seen[link.Path] = struct{}{}
 	}
-
-	for _, link := range stale {
-		info, err := os.Lstat(link.Path)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		if info.Mode()&os.ModeSymlink == 0 {
-			return fmt.Errorf("managed link path is no longer a symlink: %s", link.Path)
-		}
-	}
-
 	return nil
 }
 
-func applyDesiredLink(link desiredLink, stateByPath map[string]ManagedLink) (string, error) {
-	if err := os.MkdirAll(filepath.Dir(link.Path), 0o755); err != nil {
-		return "", err
+func planLinkActions(links []desiredLink, stateLinks map[string]ManagedLink) ([]linkAction, error) {
+	actions := make([]linkAction, 0, len(links))
+	for _, link := range links {
+		action, err := plannedLinkStatus(link, stateLinks)
+		if err != nil {
+			return nil, err
+		}
+		actions = append(actions, linkAction{Link: link, Status: action})
 	}
+	return actions, nil
+}
 
+func plannedLinkStatus(link desiredLink, stateLinks map[string]ManagedLink) (string, error) {
 	info, err := os.Lstat(link.Path)
 	if errors.Is(err, os.ErrNotExist) {
-		if err := os.Symlink(link.Target, link.Path); err != nil {
-			return "", err
-		}
 		return "created", nil
 	}
 	if err != nil {
@@ -672,20 +952,28 @@ func applyDesiredLink(link desiredLink, stateByPath map[string]ManagedLink) (str
 		return "", err
 	}
 	if currentTarget == link.Target {
-		return "ok", nil
+		return "linked", nil
 	}
 
-	if _, ok := stateByPath[link.Path]; !ok {
+	if _, ok := stateLinks[link.Path]; !ok {
 		return "", fmt.Errorf("destination is an unmanaged symlink: %s", link.Path)
 	}
 
-	if err := os.Remove(link.Path); err != nil {
-		return "", err
-	}
-	if err := os.Symlink(link.Target, link.Path); err != nil {
-		return "", err
-	}
 	return "updated", nil
+}
+
+func createSymlink(link desiredLink) error {
+	if err := os.MkdirAll(filepath.Dir(link.Path), 0o755); err != nil {
+		return err
+	}
+	return os.Symlink(link.Target, link.Path)
+}
+
+func replaceSymlink(link desiredLink) error {
+	if err := os.Remove(link.Path); err != nil {
+		return err
+	}
+	return os.Symlink(link.Target, link.Path)
 }
 
 func removeManagedLink(link ManagedLink) error {
@@ -713,7 +1001,7 @@ func staleLinks(state State, desired map[string]desiredLink) []ManagedLink {
 	return stale
 }
 
-func currentLinkStatus(path string, target string) string {
+func currentLinkStatus(path string, target string, stateLinks map[string]ManagedLink) string {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return "missing"
@@ -724,19 +1012,116 @@ func currentLinkStatus(path string, target string) string {
 	if info.Mode()&os.ModeSymlink == 0 {
 		return "conflict"
 	}
+
 	currentTarget, err := os.Readlink(path)
 	if err != nil {
 		return "invalid"
 	}
 	if currentTarget == target {
-		return "ok"
+		return "linked"
+	}
+	if _, ok := stateLinks[path]; ok {
+		return "stale"
 	}
 	return "conflict"
+}
+
+func fatalSourceReports(reports []SourceReport) error {
+	problems := make([]string, 0)
+	for _, report := range reports {
+		switch report.Status {
+		case "missing-source", "invalid-source", "invalid-ref":
+			problems = append(problems, fmt.Sprintf("%s: %s", report.Alias, report.Status))
+		}
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(problems, "; "))
+}
+
+func fatalLinkReports(reports []LinkReport) error {
+	problems := make([]string, 0)
+	for _, report := range reports {
+		switch report.Status {
+		case "unknown-source", "source-not-ready", "missing-skill", "ambiguous-skill", "conflict":
+			problems = append(problems, fmt.Sprintf("%s/%s/%s: %s", report.Agent, report.Source, report.Skill, report.Status))
+		}
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(problems, "; "))
+}
+
+func selectResolvedSources(all map[string]*resolvedSource, aliases []string) (map[string]*resolvedSource, error) {
+	if len(aliases) == 0 {
+		return all, nil
+	}
+
+	selected := map[string]*resolvedSource{}
+	for _, alias := range aliases {
+		src, ok := all[alias]
+		if !ok {
+			return nil, fmt.Errorf("unknown project source %q", alias)
+		}
+		selected[alias] = src
+	}
+	return selected, nil
+}
+
+func sourceStateMap(state State) map[string]ProjectSourceState {
+	out := map[string]ProjectSourceState{}
+	for _, src := range state.Sources {
+		out[src.Source] = src
+	}
+	return out
+}
+
+func managedLinkMap(state State) map[string]ManagedLink {
+	out := map[string]ManagedLink{}
+	for _, link := range state.Links {
+		out[link.Path] = link
+	}
+	return out
+}
+
+func desiredLinkMap(links []desiredLink) map[string]desiredLink {
+	out := map[string]desiredLink{}
+	for _, link := range links {
+		out[link.Path] = link
+	}
+	return out
+}
+
+func mergeSourceStates(state State, updates []ProjectSourceState, removeAliases map[string]struct{}) State {
+	current := sourceStateMap(state)
+	for _, update := range updates {
+		current[update.Source] = update
+	}
+	for alias := range removeAliases {
+		delete(current, alias)
+	}
+
+	next := State{
+		Sources: make([]ProjectSourceState, 0, len(current)),
+		Links:   state.Links,
+	}
+	for _, src := range current {
+		next.Sources = append(next.Sources, src)
+	}
+	sort.Slice(next.Sources, func(i, j int) bool {
+		return next.Sources[i].Source < next.Sources[j].Source
+	})
+	return next
 }
 
 func ensureManifestDefaults(manifest *Manifest) {
 	if manifest.Sources == nil {
 		manifest.Sources = map[string]ProjectSource{}
+	}
+	if manifest.Agents == nil {
+		manifest.Agents = map[string]ProjectAgentOverride{}
 	}
 	if manifest.Skills == nil {
 		manifest.Skills = []ProjectSkill{}
@@ -765,6 +1150,28 @@ func shortCommit(commit string) string {
 		return commit[:12]
 	}
 	return commit
+}
+
+func syncSourceStatus(status string) string {
+	switch status {
+	case "not-synced":
+		return "resolved"
+	case "update-available":
+		return "updated"
+	default:
+		return status
+	}
+}
+
+func dryRunLinkStatus(status string) string {
+	switch status {
+	case "created":
+		return "would-create"
+	case "updated":
+		return "would-update"
+	default:
+		return status
+	}
 }
 
 func sortSourceReports(reports []SourceReport) {

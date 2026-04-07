@@ -180,7 +180,7 @@ func TestProjectSyncCreatesWorktreeAndSymlink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("project sync error = %v, stderr = %s", err, stderr)
 	}
-	assertOutputHasFields(t, stdout, "repo-one", "ready", "main", commit[:12])
+	assertOutputHasFields(t, stdout, "repo-one", "resolved", "main", commit[:12])
 	assertOutputHasFields(t, stdout, "codex", "repo-one", "analytics", "created", filepath.Join(resolvedProjectDir, "agent-skills", "analytics"))
 
 	projectID, err := project.ProjectID(resolvedProjectDir)
@@ -210,8 +210,8 @@ func TestProjectSyncCreatesWorktreeAndSymlink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("project status error = %v, stderr = %s", err, statusErr)
 	}
-	assertOutputHasFields(t, statusOut, "repo-one", "ready", "main", commit[:12])
-	assertOutputHasFields(t, statusOut, "codex", "repo-one", "analytics", "ok", linkPath)
+	assertOutputHasFields(t, statusOut, "repo-one", "up-to-date", "main", commit[:12])
+	assertOutputHasFields(t, statusOut, "codex", "repo-one", "analytics", "linked", linkPath)
 }
 
 func TestProjectSyncPrunesManagedStaleLinks(t *testing.T) {
@@ -259,6 +259,101 @@ func TestProjectSyncPrunesManagedStaleLinks(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(resolvedProjectDir, "agent-skills", "analytics")); err != nil {
 		t.Fatalf("analytics symlink missing after prune: %v", err)
+	}
+}
+
+func TestProjectUpdateAndDryRunFlow(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	resolvedProjectDir := resolvedPath(t, projectDir)
+
+	remote := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+	commitOne := gitOutput(t, remote, "rev-parse", "HEAD")
+
+	writeProjectManifest(t, projectDir, manifestFor(remote, map[string][]string{
+		"analytics": {"codex"},
+	}))
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "project", "sync"); err != nil {
+		t.Fatalf("initial project sync error = %v, stderr = %s", err, stderr)
+	}
+
+	mustWriteFile(t, filepath.Join(remote, "README.md"), "next\n")
+	runGit(t, remote, "add", ".")
+	runGit(t, remote, "commit", "-m", "advance main")
+	commitTwo := gitOutput(t, remote, "rev-parse", "HEAD")
+
+	statusOut, statusErr, err := executeCommandInDir(t, env, projectDir, "project", "status")
+	if err != nil {
+		t.Fatalf("project status error = %v, stderr = %s", err, statusErr)
+	}
+	assertOutputHasFields(t, statusOut, "repo-one", "update-available", "main", commitTwo[:12])
+	assertOutputHasFields(t, statusOut, "codex", "repo-one", "analytics", "linked", filepath.Join(resolvedProjectDir, "agent-skills", "analytics"))
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "project", "update", "--dry-run")
+	if err != nil {
+		t.Fatalf("project update --dry-run error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "dry-run") {
+		t.Fatalf("stdout missing dry-run marker:\n%s", stdout)
+	}
+	assertOutputHasFields(t, stdout, "repo-one", "updated", "main", commitTwo[:12])
+
+	linkPath := filepath.Join(resolvedProjectDir, "agent-skills", "analytics")
+	target, err := os.Readlink(linkPath)
+	if err != nil {
+		t.Fatalf("Readlink(%q) error = %v", linkPath, err)
+	}
+	if !strings.Contains(target, commitOne) {
+		t.Fatalf("dry-run should not change link target, got %q", target)
+	}
+
+	stdout, stderr, err = executeCommandInDir(t, env, projectDir, "project", "update")
+	if err != nil {
+		t.Fatalf("project update error = %v, stderr = %s", err, stderr)
+	}
+	assertOutputHasFields(t, stdout, "repo-one", "updated", "main", commitTwo[:12])
+
+	statusOut, statusErr, err = executeCommandInDir(t, env, projectDir, "project", "status")
+	if err != nil {
+		t.Fatalf("project status error = %v, stderr = %s", err, statusErr)
+	}
+	assertOutputHasFields(t, statusOut, "repo-one", "up-to-date", "main", commitTwo[:12])
+	assertOutputHasFields(t, statusOut, "codex", "repo-one", "analytics", "stale", linkPath)
+
+	stdout, stderr, err = executeCommandInDir(t, env, projectDir, "project", "sync", "--dry-run")
+	if err != nil {
+		t.Fatalf("project sync --dry-run error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "dry-run") {
+		t.Fatalf("stdout missing dry-run marker:\n%s", stdout)
+	}
+	assertOutputHasFields(t, stdout, "codex", "repo-one", "analytics", "would-update", linkPath)
+
+	target, err = os.Readlink(linkPath)
+	if err != nil {
+		t.Fatalf("Readlink(%q) error = %v", linkPath, err)
+	}
+	if !strings.Contains(target, commitOne) {
+		t.Fatalf("sync dry-run should not change link target, got %q", target)
+	}
+
+	stdout, stderr, err = executeCommandInDir(t, env, projectDir, "project", "sync")
+	if err != nil {
+		t.Fatalf("project sync error = %v, stderr = %s", err, stderr)
+	}
+	assertOutputHasFields(t, stdout, "repo-one", "up-to-date", "main", commitTwo[:12])
+	assertOutputHasFields(t, stdout, "codex", "repo-one", "analytics", "updated", linkPath)
+
+	target, err = os.Readlink(linkPath)
+	if err != nil {
+		t.Fatalf("Readlink(%q) error = %v", linkPath, err)
+	}
+	if !strings.Contains(target, commitTwo) {
+		t.Fatalf("sync should update link target to %s, got %q", commitTwo, target)
 	}
 }
 
@@ -414,7 +509,7 @@ func assertOutputHasFields(t *testing.T, output string, want ...string) {
 
 	for _, line := range strings.Split(output, "\n") {
 		fields := strings.Fields(line)
-		if len(fields) != len(want) {
+		if len(fields) < len(want) {
 			continue
 		}
 

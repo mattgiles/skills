@@ -22,6 +22,7 @@ func newProjectCommand() *cobra.Command {
 	cmd.AddCommand(newProjectInitCommand())
 	cmd.AddCommand(newProjectStatusCommand())
 	cmd.AddCommand(newProjectSyncCommand())
+	cmd.AddCommand(newProjectUpdateCommand())
 
 	return cmd
 }
@@ -80,7 +81,9 @@ func newProjectStatusCommand() *cobra.Command {
 }
 
 func newProjectSyncCommand() *cobra.Command {
-	return &cobra.Command{
+	var dryRun bool
+
+	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Sync declared project skills into target agent directories",
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -98,7 +101,9 @@ func newProjectSyncCommand() *cobra.Command {
 				return err
 			}
 
-			result, err := project.Sync(context.Background(), projectDir, cfg)
+			result, err := project.Sync(context.Background(), projectDir, cfg, project.SyncOptions{
+				DryRun: dryRun,
+			})
 			if err != nil {
 				return err
 			}
@@ -107,6 +112,50 @@ func newProjectSyncCommand() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview sync actions without changing state or links")
+	return cmd
+}
+
+func newProjectUpdateCommand() *cobra.Command {
+	var dryRun bool
+	var syncAfter bool
+
+	cmd := &cobra.Command{
+		Use:   "update [source...]",
+		Short: "Resolve newer commits for project sources",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := source.EnsureGitAvailable(); err != nil {
+				return err
+			}
+
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+
+			projectDir, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+
+			result, err := project.Update(context.Background(), projectDir, cfg, project.UpdateOptions{
+				SelectedSources: args,
+				Sync:            syncAfter,
+				DryRun:          dryRun,
+			})
+			if err != nil {
+				return err
+			}
+
+			renderProjectUpdate(cmd, result)
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview update actions without changing state or links")
+	cmd.Flags().BoolVar(&syncAfter, "sync", false, "Run project sync after updating source state")
+	return cmd
 }
 
 func renderProjectStatus(cmd *cobra.Command, report project.StatusReport) {
@@ -125,9 +174,9 @@ func renderProjectStatus(cmd *cobra.Command, report project.StatusReport) {
 		fmt.Fprintln(cmd.OutOrStdout(), "no project skills declared")
 	} else {
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "AGENT\tSOURCE\tSKILL\tSTATUS\tPATH")
+		fmt.Fprintln(w, "AGENT\tSOURCE\tSKILL\tSTATUS\tPATH\tMESSAGE")
 		for _, link := range report.Links {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", link.Agent, link.Source, link.Skill, link.Status, link.Path)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", link.Agent, link.Source, link.Skill, link.Status, link.Path, link.Message)
 		}
 		_ = w.Flush()
 	}
@@ -143,20 +192,24 @@ func renderProjectStatus(cmd *cobra.Command, report project.StatusReport) {
 }
 
 func renderProjectSync(cmd *cobra.Command, result project.SyncResult) {
+	if result.DryRun {
+		fmt.Fprintln(cmd.OutOrStdout(), "dry-run")
+	}
+
 	if len(result.Sources) > 0 {
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "SOURCE\tSTATUS\tREF\tCOMMIT")
+		fmt.Fprintln(w, "SOURCE\tSTATUS\tREF\tCOMMIT\tMESSAGE")
 		for _, src := range result.Sources {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", src.Alias, src.Status, src.Ref, src.Commit)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", src.Alias, src.Status, src.Ref, src.Commit, src.Message)
 		}
 		_ = w.Flush()
 	}
 
 	if len(result.Links) > 0 {
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "AGENT\tSOURCE\tSKILL\tSTATUS\tPATH")
+		fmt.Fprintln(w, "AGENT\tSOURCE\tSKILL\tSTATUS\tPATH\tMESSAGE")
 		for _, link := range result.Links {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", link.Agent, link.Source, link.Skill, link.Status, link.Path)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", link.Agent, link.Source, link.Skill, link.Status, link.Path, link.Message)
 		}
 		_ = w.Flush()
 	}
@@ -168,5 +221,24 @@ func renderProjectSync(cmd *cobra.Command, result project.SyncResult) {
 			fmt.Fprintf(w, "%s\n", path)
 		}
 		_ = w.Flush()
+	}
+}
+
+func renderProjectUpdate(cmd *cobra.Command, result project.UpdateResult) {
+	if result.DryRun {
+		fmt.Fprintln(cmd.OutOrStdout(), "dry-run")
+	}
+
+	if len(result.Sources) > 0 {
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "SOURCE\tSTATUS\tREF\tCOMMIT\tMESSAGE")
+		for _, src := range result.Sources {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", src.Alias, src.Status, src.Ref, src.Commit, src.Message)
+		}
+		_ = w.Flush()
+	}
+
+	if result.Sync != nil {
+		renderProjectSync(cmd, *result.Sync)
 	}
 }
