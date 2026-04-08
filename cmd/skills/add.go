@@ -81,7 +81,7 @@ func newAddCommand() *cobra.Command {
 				return err
 			}
 
-			outcome, err := runAddSync(cmd, target)
+			outcome, err := runAddSync(cmd, target, sourceAlias)
 			if err != nil {
 				if restoreErr := restoreManifestBytes(target.ManifestPath, originalBytes); restoreErr != nil {
 					return fmt.Errorf("%w; rollback manifest %s: %v", err, target.ManifestPath, restoreErr)

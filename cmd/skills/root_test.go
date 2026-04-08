@@ -216,6 +216,81 @@ func TestAddCommandAddsSkillToExistingRepoSourceAndSyncs(t *testing.T) {
 	}
 }
 
+func TestAddCommandAdvancesOnlyTargetSourceWhenNewSkillExistsUpstream(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	resolvedProjectDir := resolvedPath(t, projectDir)
+	initGitRepo(t, projectDir)
+
+	remoteOne := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+	remoteTwo := initRemoteRepo(t, map[string]string{
+		"lint/SKILL.md": "# lint",
+	})
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
+		t.Fatalf("init error = %v, stderr = %s", err, stderr)
+	}
+	writeProjectManifest(t, projectDir, strings.Join([]string{
+		"sources:",
+		"  repo-one:",
+		"    url: " + remoteOne,
+		"    ref: main",
+		"  repo-two:",
+		"    url: " + remoteTwo,
+		"    ref: main",
+		"skills:",
+		"  - source: repo-one",
+		"    name: analytics",
+		"  - source: repo-two",
+		"    name: lint",
+		"",
+	}, "\n"))
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "sync"); err != nil {
+		t.Fatalf("initial sync error = %v, stderr = %s", err, stderr)
+	}
+
+	commitTwoBefore := gitOutput(t, remoteTwo, "rev-parse", "HEAD")
+	mustWriteFile(t, filepath.Join(remoteOne, "partner-project-inspector", "SKILL.md"), "# partner-project-inspector")
+	runGit(t, remoteOne, "add", ".")
+	runGit(t, remoteOne, "commit", "-m", "add partner-project-inspector")
+	commitOneAfter := gitOutput(t, remoteOne, "rev-parse", "HEAD")
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "add", "repo-one", "partner-project-inspector")
+	if err != nil {
+		t.Fatalf("add error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, `added skill "partner-project-inspector" from source "repo-one"`) {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	assertOutputHasFields(t, stdout, "repo-one", "up-to-date", "main", commitOneAfter[:12])
+	assertOutputHasFields(t, stdout, "repo-two", "up-to-date", "main", commitTwoBefore[:12])
+
+	manifestData, err := os.ReadFile(filepath.Join(projectDir, ".agents", "manifest.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile(manifest) error = %v", err)
+	}
+	if !strings.Contains(string(manifestData), "name: partner-project-inspector") {
+		t.Fatalf("manifest missing added skill entry:\n%s", string(manifestData))
+	}
+
+	canonicalPath := filepath.Join(resolvedProjectDir, ".agents", "skills", "partner-project-inspector")
+	if _, err := os.Lstat(canonicalPath); err != nil {
+		t.Fatalf("expected canonical skill link %q: %v", canonicalPath, err)
+	}
+
+	statusOut, statusErr, err := executeCommandInDir(t, env, projectDir, "status")
+	if err != nil {
+		t.Fatalf("status error = %v, stderr = %s", err, statusErr)
+	}
+	assertOutputHasFields(t, statusOut, "repo-one", "up-to-date", "main", commitOneAfter[:12])
+	assertOutputHasFields(t, statusOut, "repo-two", "up-to-date", "main", commitTwoBefore[:12])
+	assertOutputHasFields(t, statusOut, "repo-one", "partner-project-inspector", "linked", canonicalPath)
+}
+
 func TestAddCommandAddsSkillToExistingGlobalSourceAndSyncs(t *testing.T) {
 	requireGit(t)
 	env := newTestEnv(t)

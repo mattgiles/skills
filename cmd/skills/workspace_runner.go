@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/mattgiles/skills/internal/doctor"
@@ -116,39 +118,51 @@ func runDoctorCommand(cmd *cobra.Command, target workspaceTarget) error {
 	return nil
 }
 
-func runAddSync(cmd *cobra.Command, target sourceManifestTarget) (addSyncOutcome, error) {
+func runAddSync(cmd *cobra.Command, target sourceManifestTarget, sourceAlias string) (addSyncOutcome, error) {
 	view := ui.New(cmd)
 	if target.Scope == scopeGlobal {
-		var result project.SyncResult
-		err := view.RunTask("Syncing added skill", ui.TaskOptions{
+		var result project.UpdateResult
+		err := view.RunTask("Updating and syncing added skill", ui.TaskOptions{
 			UseErrorWriter: true,
-			SuccessText:    "Synced added skill",
-			FailureText:    "Failed to sync added skill",
+			SuccessText:    "Updated and synced added skill",
+			FailureText:    "Failed to update and sync added skill",
 		}, func() error {
-			var syncErr error
-			result, syncErr = project.HomeSync(cmd.Context(), target.Config, project.SyncOptions{})
-			return syncErr
+			var updateErr error
+			result, updateErr = project.HomeUpdate(cmd.Context(), target.Config, project.UpdateOptions{
+				SelectedSources: []string{sourceAlias},
+				Sync:            true,
+			})
+			return updateErr
 		})
 		if err != nil {
 			return addSyncOutcome{}, err
 		}
-		return addSyncOutcome{summary: target.Summary, result: result}, nil
+		if result.Sync == nil {
+			return addSyncOutcome{}, fmt.Errorf("update finished without sync result for source %q", sourceAlias)
+		}
+		return addSyncOutcome{summary: target.Summary, result: *result.Sync}, nil
 	}
 
-	var result project.SyncResult
-	err := view.RunTask("Syncing added skill", ui.TaskOptions{
+	var result project.UpdateResult
+	err := view.RunTask("Updating and syncing added skill", ui.TaskOptions{
 		UseErrorWriter: true,
-		SuccessText:    "Synced added skill",
-		FailureText:    "Failed to sync added skill",
+		SuccessText:    "Updated and synced added skill",
+		FailureText:    "Failed to update and sync added skill",
 	}, func() error {
-		var syncErr error
-		result, syncErr = project.Sync(cmd.Context(), target.ProjectRoot, project.SyncOptions{})
-		return syncErr
+		var updateErr error
+		result, updateErr = project.Update(cmd.Context(), target.ProjectRoot, project.UpdateOptions{
+			SelectedSources: []string{sourceAlias},
+			Sync:            true,
+		})
+		return updateErr
 	})
 	if err != nil {
 		return addSyncOutcome{}, err
 	}
-	return addSyncOutcome{summary: target.Summary, result: result}, nil
+	if result.Sync == nil {
+		return addSyncOutcome{}, fmt.Errorf("update finished without sync result for source %q", sourceAlias)
+	}
+	return addSyncOutcome{summary: target.Summary, result: *result.Sync}, nil
 }
 
 func doctorTargetDir(target workspaceTarget) string {
