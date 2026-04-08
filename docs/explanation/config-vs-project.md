@@ -10,7 +10,7 @@ Global config owns machine-level shared defaults:
 - where shared/home worktrees live
 - where shared home skills live
 - where shared home Claude adapters live
-- which source aliases are already registered
+- default shared install and storage paths for home scope
 
 ## Project Manifest
 

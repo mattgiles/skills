@@ -13,6 +13,7 @@ If you already know what you want to do, go to one of the Divio sections below.
 Tutorials are for learning by doing.
 
 - [First Project Sync](tutorials/first-project.md)
+- [First Global Workflow](tutorials/first-global-workflow.md)
 - [Manage Updates](tutorials/manage-updates.md)
 
 ## How-to Guides
@@ -20,11 +21,14 @@ Tutorials are for learning by doing.
 How-to guides are for completing a specific task.
 
 - [Install The CLI](how-to/install-the-cli.md)
+- [Add A Skill Quickly](how-to/add-a-skill-quickly.md)
 - [Release A Version](how-to/release-a-version.md)
+- [Enable Shell Completion](how-to/enable-shell-completion.md)
 - [Set Up Global Config](how-to/set-up-global-config.md)
 - [Add And Sync A Source](how-to/add-and-sync-a-source.md)
 - [Find Skills In Sources](how-to/find-skills-in-sources.md)
 - [Create A Project Manifest](how-to/create-a-project-manifest.md)
+- [Read Status And Sync Output](how-to/read-status-and-sync-output.md)
 - [Sync Project Skills](how-to/sync-project-skills.md)
 - [Update Project Pins](how-to/update-project-pins.md)
 - [Use Local Agent Directories](how-to/use-local-agent-directories.md)
@@ -35,7 +39,9 @@ How-to guides are for completing a specific task.
 Reference is for exact behavior, flags, and file formats.
 
 - [CLI](reference/cli.md)
+- [Doctor](reference/doctor.md)
 - [Global Config](reference/config.md)
+- [Project Local Config](reference/local-config.md)
 - [Project Manifest](reference/project-manifest.md)
 - [Project State](reference/project-state.md)
 - [Skill Discovery](reference/skill-discovery.md)
@@ -48,6 +54,6 @@ Explanation is for the reasoning behind the system.
 - [Mental Model](explanation/mental-model.md)
 - [Why Symlinks](explanation/why-symlinks.md)
 - [Why Worktrees And Pins](explanation/why-worktrees-and-pins.md)
-- [Multi-Agent Design](explanation/multi-agent-design.md)
+- [Install Scope And Cache Mode](explanation/install-scope-and-cache-mode.md)
 - [Config Vs Project](explanation/config-vs-project.md)
 - [Current Scope And Roadmap](explanation/current-scope-and-roadmap.md)

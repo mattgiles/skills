@@ -34,6 +34,12 @@ Notes:
 
 ```text
 skills
+├── add <source> <skill> [--url <git-url>] [--ref <ref>] [--global]
+├── completion
+│   ├── bash
+│   ├── fish
+│   ├── powershell
+│   └── zsh
 ├── init [--global] [--cache local|global]
 ├── status [--global]
 ├── sync [--global] [--dry-run]
@@ -51,6 +57,39 @@ skills
 │   └── list [--global] [--source <alias>]
 └── version
 ```
+
+## `skills add <source> <skill>`
+
+Adds a skill to the active manifest and immediately runs sync for the same scope.
+
+Behavior:
+
+- if the source alias already exists, only the skill declaration is added
+- if the source alias does not exist, `--url` is required
+- when creating a new source and `--ref` is omitted, `skills` infers the remote default branch
+- if the `(source, skill)` pair is already declared, the command prints a no-op message and exits successfully
+- if sync fails after the manifest edit, the command restores the previous manifest bytes
+
+Flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--url <git-url>` | Source Git URL or local repo path for a new source |
+| `--ref <ref>` | Source ref for a new source; defaults to the remote's default branch |
+| `--global` | Operate on shared home/global installs |
+
+## `skills completion`
+
+Prints shell completion scripts for supported shells.
+
+Subcommands:
+
+- `skills completion bash`
+- `skills completion fish`
+- `skills completion powershell`
+- `skills completion zsh`
+
+Shell-specific help describes how to load the generated script for the current shell and how to install it persistently.
 
 ## `skills config init`
 
@@ -102,6 +141,7 @@ Behavior:
 
 - inside a Git repo, `skills init` initializes or repairs repo-local state
 - project mode records the chosen cache backend in untracked `.agents/local.yaml`
+- when cache mode is not configured yet and stdin/stdout are interactive, `skills init` prompts for `local` or `global`
 - in non-interactive repo initialization, pass `--cache=<local|global>` the first time
 - outside a Git repo, `skills init` requires `--global`
 

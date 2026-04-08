@@ -14,6 +14,8 @@ Or for shared home installs:
 skills doctor --global
 ```
 
+For the full command surface and output structure, see [Doctor Reference](../reference/doctor.md).
+
 ## `ignore-rules-missing`
 
 Cause:

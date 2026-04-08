@@ -2,6 +2,8 @@
 
 Use source commands to declare a Git repo under an alias in the active manifest and keep a canonical local clone up to date.
 
+If you already know the exact skill you want, [Add A Skill Quickly](add-a-skill-quickly.md) is the shorter path.
+
 ## Register A Source
 
 ```bash

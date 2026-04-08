@@ -4,11 +4,14 @@ The codebase already supports the main v1 workflow:
 
 - initialize global config
 - register and sync sources
+- add a skill directly with one command
 - discover skills
 - create a project manifest
-- sync project skills into agent roots
+- sync project or shared-home skills into canonical install roots
 - record and update resolved commits
 - preview updates and syncs with dry-run mode
+- run doctor checks across config, workspace, sources, and managed links
+- generate shell completion scripts
 
 ## What Is Current Behavior
 
@@ -16,10 +19,12 @@ The reference and how-to sections in this documentation describe the current imp
 
 ## What Is Still Roadmap Material
 
-`ROADMAP.md` describes longer-term intent and framing, including:
+There is no separate checked-in roadmap document in this repository today.
 
-- the broader phase breakdown
-- future ergonomics such as additional output modes
-- product positioning decisions beyond the current command surface
+Treat these as likely future-direction topics rather than current promises:
 
-Use the roadmap to understand direction, not to infer current behavior. If the roadmap and code disagree, the code and tests win for user-facing docs.
+- additional machine-readable output modes
+- more installer and platform coverage beyond the current public macOS release flow
+- higher-level ergonomics on top of the current source, manifest, and sync model
+
+If design notes, issue discussions, or old planning text disagree with the code, the code and tests win for user-facing docs.

@@ -36,14 +36,14 @@ go build -o ./bin/skills ./cmd/skills
 export SKILLS_BIN="/absolute/path/to/skills-repo/bin/skills"
 ```
 
-## 2. Create A Clean Working Area
+## 1. Create A Clean Working Area
 
 ```bash
 mkdir -p /tmp/skills-tutorial
 cd /tmp/skills-tutorial
 ```
 
-## 3. Create A Local Skill Repository
+## 2. Create A Local Skill Repository
 
 ```bash
 mkdir -p repos/repo-one/analytics
@@ -58,7 +58,7 @@ git commit -m "initial"
 cd /tmp/skills-tutorial
 ```
 
-## 4. Initialize A Standardized Project Workspace
+## 3. Initialize A Standardized Project Workspace
 
 ```bash
 mkdir -p project
@@ -78,7 +78,7 @@ skills:
     name: analytics
 ```
 
-## 5. Sync The Project
+## 4. Sync The Project
 
 ```bash
 $SKILLS_BIN sync --verbose
@@ -90,7 +90,7 @@ On the first run you should see:
 - a `SKILLS` section with `analytics` in status `created`
 - a `CLAUDE` section with `analytics` in status `created`
 
-## 6. Inspect The Result
+## 5. Inspect The Result
 
 ```bash
 $SKILLS_BIN status --verbose

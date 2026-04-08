@@ -1,25 +1,23 @@
 # Multi-Agent Design
 
-The current multi-agent model is intentionally thin.
+The current install model is intentionally thin.
 
-An agent entry answers one practical question:
+`skills` does not currently expose a generic multi-agent configuration layer. Its user-facing model is simpler:
 
-```text
-Where should this agent's skills be linked?
-```
-
-That is why the public agent interface is just `skills_dir`.
+- canonical installs live in `.agents/skills` for project scope or `shared_skills_dir` for home scope
+- Claude adapter links live in `.claude/skills` for project scope or `shared_claude_skills_dir` for home scope
 
 ## What The Current Design Supports
 
-- global agent roots in config
-- project-level overrides for local testing or project-specific installs
-- installing one declared skill into multiple agent roots
+- one declared skill can be installed in project scope
+- the same declared skill can also be installed separately in shared home scope
+- Claude compatibility is handled as a second managed link layer that targets the canonical install path
 
 ## What The Current Design Does Not Do
 
 - transform skill contents per agent
 - convert between packaging formats
-- manage agent-specific lifecycle rules beyond filesystem linking
+- manage arbitrary agent-specific install roots beyond the canonical and Claude paths
+- expose a public `skills_dir` or generalized per-agent schema
 
 This keeps the system aligned with its main job: source management, commit resolution, and link orchestration.

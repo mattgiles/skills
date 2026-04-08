@@ -34,6 +34,8 @@ skills version
 skills --help
 ```
 
+If you want tab completion after install, see [Enable Shell Completion](enable-shell-completion.md).
+
 ## Upgrade An Existing Install
 
 Upgrade to the latest release:
