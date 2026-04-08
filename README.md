@@ -58,6 +58,15 @@ Upgrade an existing install:
 skills self update
 ```
 
+## Exit Codes
+
+`skills` uses stable process exit codes for automation:
+
+- `0` for success
+- `2` for usage or argument errors
+- `3` when `skills doctor` finds problems
+- `1` for other runtime failures
+
 ## Initialize
 
 Inside a Git repo, `skills init` initializes repo-local state by default.

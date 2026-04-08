@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -10,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/spf13/pflag"
 
 	"github.com/mattgiles/skills/internal/project"
 	"github.com/mattgiles/skills/internal/selfupdate"
@@ -1400,6 +1403,71 @@ func TestStatusCommandPropagatesRootContext(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "context canceled") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestExitCodeForError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "success", err: nil, want: exitCodeSuccess},
+		{name: "doctor", err: errDoctorFoundProblems, want: exitCodeDoctor},
+		{name: "help", err: pflag.ErrHelp, want: exitCodeSuccess},
+		{name: "usage", err: errors.New("unknown flag: --wat"), want: exitCodeUsage},
+		{name: "runtime", err: errors.New("boom"), want: exitCodeFailure},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := exitCodeForError(tc.err); got != tc.want {
+				t.Fatalf("exitCodeForError(%v) = %d, want %d", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExitCodePolicyForUsageError(t *testing.T) {
+	env := newTestEnv(t)
+
+	_, _, err := executeCommand(t, env, "status", "--unknown-flag")
+	if err == nil {
+		t.Fatal("expected usage error")
+	}
+	if got := exitCodeForError(err); got != exitCodeUsage {
+		t.Fatalf("exitCodeForError() = %d, want %d (err=%v)", got, exitCodeUsage, err)
+	}
+}
+
+func TestExitCodePolicyForDoctorProblems(t *testing.T) {
+	env := newTestEnv(t)
+
+	configPath := filepath.Join(env.configHome, "skills", "config.yaml")
+	mustWriteFile(t, configPath, "sources: [\n")
+
+	_, _, err := executeCommand(t, env, "doctor", "--global")
+	if err == nil {
+		t.Fatal("expected doctor error")
+	}
+	if !errors.Is(err, errDoctorFoundProblems) {
+		t.Fatalf("expected errDoctorFoundProblems, got %v", err)
+	}
+	if got := exitCodeForError(err); got != exitCodeDoctor {
+		t.Fatalf("exitCodeForError() = %d, want %d", got, exitCodeDoctor)
+	}
+}
+
+func TestExitCodePolicyForRuntimeFailure(t *testing.T) {
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+
+	_, _, err := executeCommandInDir(t, env, projectDir, "status")
+	if err == nil {
+		t.Fatal("expected runtime failure")
+	}
+	if got := exitCodeForError(err); got != exitCodeFailure {
+		t.Fatalf("exitCodeForError() = %d, want %d (err=%v)", got, exitCodeFailure, err)
 	}
 }
 

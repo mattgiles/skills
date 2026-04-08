@@ -13,6 +13,23 @@ Global flags:
 | `--verbose` | Show detailed diagnostic output |
 | `-h`, `--help` | Show help |
 
+## Exit Codes
+
+`skills` uses a small stable exit-code policy:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success |
+| `2` | Usage or argument error |
+| `3` | `skills doctor` found problems |
+| `1` | Other runtime failure |
+
+Notes:
+
+- `--help` exits with `0`
+- command output and diagnostics still follow the existing stdout/stderr split
+- machine-readable output is intentionally deferred to a separate later feature
+
 ## Command Tree
 
 ```text
