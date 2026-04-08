@@ -22,7 +22,7 @@ func Discover(sourceAlias string, repoPath string) ([]DiscoveredSkill, error) {
 	if tracked, ok, err := discoverTrackedPaths(repoPath); err != nil {
 		return nil, err
 	} else if ok {
-		return DiscoverFromPaths(sourceAlias, repoPath, tracked), nil
+		return DiscoverFromPaths(sourceAlias, repoPath, tracked, filepath.Base(repoPath)), nil
 	}
 
 	return discoverFromFilesystem(sourceAlias, repoPath)
@@ -33,7 +33,7 @@ func DiscoverAtCommit(ctx context.Context, src source.Source, rootPath string, c
 	if err != nil {
 		return nil, err
 	}
-	return DiscoverFromPaths(src.Alias, rootPath, paths), nil
+	return DiscoverFromPaths(src.Alias, rootPath, paths, source.RepoBasename(src)), nil
 }
 
 func discoverTrackedPaths(repoPath string) ([]string, bool, error) {
@@ -107,10 +107,10 @@ func discoverFromFilesystem(sourceAlias string, repoPath string) ([]DiscoveredSk
 		return nil, err
 	}
 
-	return DiscoverFromPaths(sourceAlias, repoPath, paths), nil
+	return DiscoverFromPaths(sourceAlias, repoPath, paths, filepath.Base(repoPath)), nil
 }
 
-func DiscoverFromPaths(sourceAlias string, repoPath string, paths []string) []DiscoveredSkill {
+func DiscoverFromPaths(sourceAlias string, repoPath string, paths []string, rootSkillName string) []DiscoveredSkill {
 	skills := make([]DiscoveredSkill, 0)
 	seen := map[string]struct{}{}
 
@@ -144,9 +144,14 @@ func DiscoverFromPaths(sourceAlias string, repoPath string, paths []string) []Di
 		}
 		seen[relativePath] = struct{}{}
 
+		name := filepath.Base(relativePath)
+		if isRepoRootPath(relativePath) {
+			name = rootSkillName
+		}
+
 		skills = append(skills, DiscoveredSkill{
 			SourceAlias:  sourceAlias,
-			Name:         filepath.Base(relativePath),
+			Name:         name,
 			Path:         absolutePath,
 			RelativePath: relativePath,
 		})
@@ -160,4 +165,9 @@ func DiscoverFromPaths(sourceAlias string, repoPath string, paths []string) []Di
 	})
 
 	return skills
+}
+
+func isRepoRootPath(relativePath string) bool {
+	relativePath = filepath.Clean(strings.TrimSpace(relativePath))
+	return relativePath == "." || relativePath == ""
 }

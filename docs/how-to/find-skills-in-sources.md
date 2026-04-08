@@ -14,6 +14,8 @@ This scans the synced repos for sources declared in `.agents/manifest.yaml` and 
 
 It resolves each source's manifest ref from the fetched canonical repo state, so a fresh `skills source sync` is enough to surface newly added upstream skills.
 
+If a source repo has `SKILL.md` at its root, `skill list` reports that as a valid skill named after the repository basename, for example `terraform-skill`.
+
 ## Filter By Source
 
 ```bash

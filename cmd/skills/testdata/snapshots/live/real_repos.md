@@ -103,3 +103,68 @@ vercel find-skills created <project>/.claude/skills/find-skills <project>/.agent
 
 ```stderr
 ```
+
+## Syncs Root Skill From Terraform Skill
+
+`project/.agents/manifest.yaml`:
+```yaml
+sources:
+  terraform-skill:
+    url: https://github.com/antonbabenko/terraform-skill
+    ref: master
+skills:
+  - source: terraform-skill
+    name: terraform-skill
+```
+
+```command
+skills sync --verbose
+```
+
+```stdout-assert
+[Workspace]
+Scope repo
+Root <project>
+Installs <project>/.agents/skills
+Cache local
+Worktrees <project>/.agents/cache/worktrees
+Repos <project>/.agents/cache/repos
+
+[Sources]
+terraform-skill resolved master <sha> - <project>/.agents/cache/repos/terraform-skill <project>/.agents/cache/worktrees/project-<sha>/terraform-skill/<sha> -
+
+[Skills]
+terraform-skill terraform-skill created <project>/.agents/skills/terraform-skill <project>/.agents/cache/worktrees/project-<sha>/terraform-skill/<sha> -
+
+[Claude]
+terraform-skill terraform-skill created <project>/.claude/skills/terraform-skill <project>/.agents/skills/terraform-skill -
+```
+
+```stderr
+```
+
+```command
+skills status --verbose
+```
+
+```stdout-assert
+[Workspace]
+Scope repo
+Root <project>
+Installs <project>/.agents/skills
+Cache local
+Worktrees <project>/.agents/cache/worktrees
+Repos <project>/.agents/cache/repos
+
+[Sources]
+terraform-skill up-to-date master <sha> <sha> <project>/.agents/cache/repos/terraform-skill <project>/.agents/cache/worktrees/project-<sha>/terraform-skill/<sha> -
+
+[Skills]
+terraform-skill terraform-skill linked <project>/.agents/skills/terraform-skill <project>/.agents/cache/worktrees/project-<sha>/terraform-skill/<sha> -
+
+[Claude]
+terraform-skill terraform-skill linked <project>/.claude/skills/terraform-skill <project>/.agents/skills/terraform-skill -
+```
+
+```stderr
+```

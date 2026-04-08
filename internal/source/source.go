@@ -5,8 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -244,6 +246,44 @@ func ListFilesAtCommit(ctx context.Context, src Source, commit string) ([]string
 		return []string{}, nil
 	}
 	return strings.Split(output, "\n"), nil
+}
+
+func RepoBasename(src Source) string {
+	for _, candidate := range []string{src.URL, src.RepoPath, src.Alias} {
+		if name := repoBasename(candidate); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+func repoBasename(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+
+	if parsed, err := url.Parse(value); err == nil && parsed.Scheme != "" {
+		return trimGitSuffix(path.Base(parsed.Path))
+	}
+
+	if strings.Contains(value, "@") && strings.Contains(value, ":") && !strings.Contains(value, "://") {
+		parts := strings.SplitN(value, ":", 2)
+		if len(parts) == 2 {
+			return trimGitSuffix(path.Base(parts[1]))
+		}
+	}
+
+	return trimGitSuffix(filepath.Base(value))
+}
+
+func trimGitSuffix(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.TrimSuffix(value, ".git")
+	if value == "." || value == string(filepath.Separator) {
+		return ""
+	}
+	return value
 }
 
 func EnsureWorktree(ctx context.Context, src Source, path string, commit string) (bool, error) {

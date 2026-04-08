@@ -11,6 +11,10 @@ The current CLI identifies a skill by:
 - source alias
 - directory name
 
+Special case:
+
+- if `SKILL.md` lives at the repository root, the skill name is the repository basename from the source URL/path
+
 The discovered record also includes the relative path within the repo.
 
 ## Discovery Sources
@@ -25,6 +29,7 @@ There are two discovery modes in the current implementation:
 ## Consequences
 
 - one repo can contain many skills
+- a repo-root `SKILL.md` is a valid single-skill source
 - nested skill directories are allowed
 - duplicate directory names within a single repo are ambiguous for repo sync, even if they live at different relative paths
 

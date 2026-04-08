@@ -47,7 +47,7 @@ func buildSkillLinkReports(resolvedSources map[string]*resolvedSource, manifest 
 				report.Status = "ambiguous-skill"
 				report.Message = "multiple skills share this directory name"
 			default:
-				target := filepath.Join(src.WorktreePath, matches[0].RelativePath)
+				target := skillTargetPath(src.WorktreePath, matches[0].RelativePath)
 				report.Target = target
 				report.Status = currentLinkStatus(report.Path, target, stateLinks)
 				desired = append(desired, desiredLink{
@@ -253,6 +253,13 @@ func currentLinkStatus(path string, target string, stateLinks map[string]Managed
 		return "stale"
 	}
 	return "conflict"
+}
+
+func skillTargetPath(worktreePath string, relativePath string) string {
+	if strings.TrimSpace(relativePath) == "" || filepath.Clean(relativePath) == "." {
+		return worktreePath
+	}
+	return filepath.Join(worktreePath, relativePath)
 }
 
 func fatalSkillLinkReports(reports []LinkReport) error {

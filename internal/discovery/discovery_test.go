@@ -115,6 +115,38 @@ func TestDiscoverFiltersToProvidedGitSubdirectory(t *testing.T) {
 	}
 }
 
+func TestDiscoverUsesRepoBasenameForRootSkill(t *testing.T) {
+	requireGit(t)
+
+	root := t.TempDir()
+	repo := filepath.Join(root, "terraform-skill")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", repo, err)
+	}
+	runGit(t, repo, "init", "-b", "main")
+	runGit(t, repo, "config", "user.name", "Codex Test")
+	runGit(t, repo, "config", "user.email", "codex@example.com")
+
+	mustWriteFile(t, filepath.Join(repo, "SKILL.md"), "# terraform-skill")
+	runGit(t, repo, "add", "SKILL.md")
+	runGit(t, repo, "commit", "-m", "initial")
+
+	skills, err := Discover("demo", repo)
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+
+	if len(skills) != 1 {
+		t.Fatalf("len(skills) = %d, want 1", len(skills))
+	}
+	if skills[0].Name != "terraform-skill" {
+		t.Fatalf("skill name = %q, want terraform-skill", skills[0].Name)
+	}
+	if skills[0].RelativePath != "." {
+		t.Fatalf("skill path = %q, want .", skills[0].RelativePath)
+	}
+}
+
 func mustWriteFile(t *testing.T, path string, contents string) {
 	t.Helper()
 

@@ -165,6 +165,65 @@ func TestListFilesAtCommit(t *testing.T) {
 	}
 }
 
+func TestRepoBasename(t *testing.T) {
+	cases := []struct {
+		name string
+		src  Source
+		want string
+	}{
+		{
+			name: "https",
+			src: Source{
+				URL: "https://github.com/antonbabenko/terraform-skill",
+			},
+			want: "terraform-skill",
+		},
+		{
+			name: "https git suffix",
+			src: Source{
+				URL: "https://github.com/antonbabenko/terraform-skill.git",
+			},
+			want: "terraform-skill",
+		},
+		{
+			name: "ssh",
+			src: Source{
+				URL: "git@github.com:antonbabenko/terraform-skill.git",
+			},
+			want: "terraform-skill",
+		},
+		{
+			name: "local path",
+			src: Source{
+				URL: "/tmp/terraform-skill",
+			},
+			want: "terraform-skill",
+		},
+		{
+			name: "fallback repo path",
+			src: Source{
+				RepoPath: "/tmp/terraform-skill",
+			},
+			want: "terraform-skill",
+		},
+		{
+			name: "fallback alias",
+			src: Source{
+				Alias: "terraform-skill",
+			},
+			want: "terraform-skill",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := RepoBasename(tc.src); got != tc.want {
+				t.Fatalf("RepoBasename() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestEnsureWorktreeReusesAndRejectsWrongCommit(t *testing.T) {
 	requireGit(t)
 

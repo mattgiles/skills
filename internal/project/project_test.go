@@ -545,6 +545,67 @@ func TestProjectStatusReportsRefChangeAsUpdateAvailable(t *testing.T) {
 	}
 }
 
+func TestProjectSyncSupportsRepoRootSkill(t *testing.T) {
+	requireGit(t)
+	_ = newProjectTestEnv(t)
+	projectDir := resolvedPath(t, t.TempDir())
+	initGitRepo(t, projectDir)
+
+	root := t.TempDir()
+	remote := filepath.Join(root, "terraform-skill")
+	if err := os.MkdirAll(remote, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", remote, err)
+	}
+	initGitRepo(t, remote)
+	mustWriteFile(t, filepath.Join(remote, "SKILL.md"), "# terraform-skill")
+	runGit(t, remote, "add", "SKILL.md")
+	runGit(t, remote, "commit", "-m", "initial")
+
+	if _, err := InitProject(context.Background(), projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
+		t.Fatalf("InitProject() error = %v", err)
+	}
+	writeProjectManifest(t, projectDir, strings.Join([]string{
+		"sources:",
+		"  repo-one:",
+		"    url: " + remote,
+		"    ref: main",
+		"skills:",
+		"  - source: repo-one",
+		"    name: terraform-skill",
+		"",
+	}, "\n"))
+
+	result, err := Sync(context.Background(), projectDir, SyncOptions{})
+	if err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+	assertSourceStatus(t, result.Sources, "repo-one", "resolved")
+	assertLinkStatus(t, result.SkillLinks, "repo-one", "terraform-skill", "created")
+
+	canonicalPath := filepath.Join(SkillsDir(projectDir), "terraform-skill")
+	target, err := os.Readlink(canonicalPath)
+	if err != nil {
+		t.Fatalf("Readlink(%q) error = %v", canonicalPath, err)
+	}
+
+	state, err := LoadState(projectDir)
+	if err != nil {
+		t.Fatalf("LoadState() error = %v", err)
+	}
+	if len(state.Sources) != 1 {
+		t.Fatalf("len(state.Sources) = %d, want 1", len(state.Sources))
+	}
+
+	projectID, err := ProjectID(projectDir)
+	if err != nil {
+		t.Fatalf("ProjectID() error = %v", err)
+	}
+	wantTarget := filepath.Join(WorktreeRoot(projectDir), projectID, "repo-one", state.Sources[0].ResolvedCommit)
+	if target != wantTarget {
+		t.Fatalf("canonical target = %q, want %q", target, wantTarget)
+	}
+}
+
 type projectTestEnv struct {
 	configHome string
 	dataHome   string

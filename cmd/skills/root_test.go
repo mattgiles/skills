@@ -584,6 +584,39 @@ func TestSkillListUsesRepoManifestSourcesByDefault(t *testing.T) {
 	assertOutputHasFields(t, stdout, "repo-one", "golang-http", filepath.Join("skills", "golang-http"))
 }
 
+func TestSkillListShowsRepoRootSkillWithRepoBasename(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
+
+	root := t.TempDir()
+	remote := filepath.Join(root, "terraform-skill")
+	if err := os.MkdirAll(remote, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", remote, err)
+	}
+	initGitRepo(t, remote)
+	mustWriteFile(t, filepath.Join(remote, "SKILL.md"), "# terraform-skill")
+	runGit(t, remote, "add", "SKILL.md")
+	runGit(t, remote, "commit", "-m", "initial")
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=global"); err != nil {
+		t.Fatalf("init error = %v, stderr = %s", err, stderr)
+	}
+	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"terraform-skill"}))
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "sync"); err != nil {
+		t.Fatalf("sync error = %v, stderr = %s", err, stderr)
+	}
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "skill", "list")
+	if err != nil {
+		t.Fatalf("skill list error = %v, stderr = %s", err, stderr)
+	}
+
+	assertOutputHasFields(t, stdout, "repo-one", "terraform-skill", ".")
+}
+
 func TestVersionCommandShowsBuildInfo(t *testing.T) {
 	env := newTestEnv(t)
 
