@@ -42,13 +42,15 @@ type latestReleaseResponse struct {
 	TagName string `json:"tag_name"`
 }
 
+var detectPlatformFunc = detectPlatform
+
 func Run(options Options) (Result, error) {
 	targetPath := strings.TrimSpace(options.TargetPath)
 	if targetPath == "" {
 		return Result{}, errors.New("target path is required")
 	}
 
-	osName, arch, err := detectPlatform()
+	osName, arch, err := detectPlatformFunc()
 	if err != nil {
 		return Result{}, err
 	}

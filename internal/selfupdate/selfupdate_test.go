@@ -16,6 +16,8 @@ import (
 )
 
 func TestRunDownloadsAndReplacesBinary(t *testing.T) {
+	stubSupportedPlatform(t)
+
 	archive := buildArchive(t, "new-binary")
 	sum := sha256.Sum256(archive)
 	checksums := fmt.Sprintf("%s  %s\n", hex.EncodeToString(sum[:]), "skills_1.2.3_darwin_"+runtimeArch()+".tar.gz")
@@ -64,6 +66,8 @@ func TestRunDownloadsAndReplacesBinary(t *testing.T) {
 }
 
 func TestRunNoopsWhenAlreadyCurrent(t *testing.T) {
+	stubSupportedPlatform(t)
+
 	targetPath := filepath.Join(t.TempDir(), "skills")
 	if err := os.WriteFile(targetPath, []byte("current"), 0o755); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -83,6 +87,8 @@ func TestRunNoopsWhenAlreadyCurrent(t *testing.T) {
 }
 
 func TestRunFailsOnChecksumMismatch(t *testing.T) {
+	stubSupportedPlatform(t)
+
 	archive := buildArchive(t, "new-binary")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -110,6 +116,31 @@ func TestRunFailsOnChecksumMismatch(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Fatalf("expected checksum mismatch error, got %v", err)
+	}
+}
+
+func TestRunFailsOnUnsupportedPlatform(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("unsupported platform coverage only applies off-darwin")
+	}
+
+	targetPath := filepath.Join(t.TempDir(), "skills")
+	if err := os.WriteFile(targetPath, []byte("current"), 0o755); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	_, err := Run(Options{
+		CurrentVersion: "v1.2.2",
+		TargetVersion:  "v1.2.3",
+		TargetPath:     targetPath,
+	})
+	if err == nil {
+		t.Fatal("expected unsupported platform error")
+	}
+
+	want := fmt.Sprintf("unsupported operating system: %s (v1 supports macOS only)", runtime.GOOS)
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("expected %q, got %v", want, err)
 	}
 }
 
@@ -155,4 +186,16 @@ func buildArchive(t *testing.T, binaryContents string) []byte {
 
 func runtimeArch() string {
 	return runtime.GOARCH
+}
+
+func stubSupportedPlatform(t *testing.T) {
+	t.Helper()
+
+	previous := detectPlatformFunc
+	detectPlatformFunc = func() (string, string, error) {
+		return "darwin", runtimeArch(), nil
+	}
+	t.Cleanup(func() {
+		detectPlatformFunc = previous
+	})
 }
