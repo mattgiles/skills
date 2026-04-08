@@ -27,23 +27,27 @@ skills sync --verbose
 ```
 
 ```stdout
-scope: repo
-root: <project>
-installs: <project>/.agents/skills
-cache: local
-worktrees: <project>/.agents/cache/worktrees
-repos: <project>/.agents/cache/repos
+# Workspace
+Scope  repo
+Root  <project>
+Installs  <project>/.agents/skills
+Cache  local
+Worktrees  <project>/.agents/cache/worktrees
+Repos  <project>/.agents/cache/repos
 
-SOURCES
-SOURCE  STATUS  REF  COMMIT  STORED  REPO_PATH  WORKTREE_PATH  MESSAGE
+
+# Sources
+Source  Status  Ref  Commit  Stored  Repo Path  Worktree Path  Message
 repo-one  resolved  main  <sha>  -  <project>/.agents/cache/repos/repo-one  <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha>  -
 
-SKILLS
-SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE
+
+# Skills
+Source  Skill  Status  Path  Target  Message
 repo-one  analytics  created  <project>/.agents/skills/analytics  <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha>/analytics  -
 
-CLAUDE
-SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE
+
+# Claude
+Source  Skill  Status  Path  Target  Message
 repo-one  analytics  created  <project>/.claude/skills/analytics  <project>/.agents/skills/analytics  -
 ```
 
@@ -55,23 +59,27 @@ skills status --verbose
 ```
 
 ```stdout
-scope: repo
-root: <project>
-installs: <project>/.agents/skills
-cache: local
-worktrees: <project>/.agents/cache/worktrees
-repos: <project>/.agents/cache/repos
+# Workspace
+Scope  repo
+Root  <project>
+Installs  <project>/.agents/skills
+Cache  local
+Worktrees  <project>/.agents/cache/worktrees
+Repos  <project>/.agents/cache/repos
 
-SOURCES
-SOURCE  STATUS  REF  COMMIT  STORED  REPO_PATH  WORKTREE_PATH  MESSAGE
+
+# Sources
+Source  Status  Ref  Commit  Stored  Repo Path  Worktree Path  Message
 repo-one  up-to-date  main  <sha>  <sha>  <project>/.agents/cache/repos/repo-one  <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha>  -
 
-SKILLS
-SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE
+
+# Skills
+Source  Skill  Status  Path  Target  Message
 repo-one  analytics  linked  <project>/.agents/skills/analytics  <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha>/analytics  -
 
-CLAUDE
-SOURCE  SKILL  STATUS  PATH  TARGET  MESSAGE
+
+# Claude
+Source  Skill  Status  Path  Target  Message
 repo-one  analytics  linked  <project>/.claude/skills/analytics  <project>/.agents/skills/analytics  -
 ```
 

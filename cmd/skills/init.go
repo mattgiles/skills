@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mattgiles/skills/internal/project"
+	"github.com/mattgiles/skills/internal/ui"
 )
 
 func newInitCommand() *cobra.Command {
@@ -44,6 +44,7 @@ func newInitCommand() *cobra.Command {
 }
 
 func runProjectInit(cmd *cobra.Command, projectDir string, requestedCacheMode string) error {
+	view := ui.New(cmd)
 	cacheMode, err := resolveProjectInitCacheMode(cmd, projectDir, requestedCacheMode)
 	if err != nil {
 		return err
@@ -54,25 +55,26 @@ func runProjectInit(cmd *cobra.Command, projectDir string, requestedCacheMode st
 	}
 
 	if result.ManifestCreated {
-		fmt.Fprintf(cmd.OutOrStdout(), "created manifest: %s\n", result.ManifestPath)
+		view.Successf("created manifest: %s", result.ManifestPath)
 	} else {
-		fmt.Fprintf(cmd.OutOrStdout(), "manifest already exists: %s\n", result.ManifestPath)
+		view.Infof("manifest already exists: %s", result.ManifestPath)
 	}
 	if result.LocalConfigSaved {
-		fmt.Fprintf(cmd.OutOrStdout(), "saved local config: %s\n", result.LocalConfigPath)
+		view.Successf("saved local config: %s", result.LocalConfigPath)
 	} else {
-		fmt.Fprintf(cmd.OutOrStdout(), "local config already set: %s\n", result.LocalConfigPath)
+		view.Infof("local config already set: %s", result.LocalConfigPath)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "cache mode: %s\n", result.CacheMode)
+	view.Infof("cache mode: %s", result.CacheMode)
 	if result.GitignoreUpdated {
-		fmt.Fprintf(cmd.OutOrStdout(), "updated gitignore: %s\n", result.GitignorePath)
+		view.Successf("updated gitignore: %s", result.GitignorePath)
 	} else {
-		fmt.Fprintf(cmd.OutOrStdout(), "gitignore already covers managed runtime artifacts: %s\n", result.GitignorePath)
+		view.Infof("gitignore already covers managed runtime artifacts: %s", result.GitignorePath)
 	}
 	return nil
 }
 
 func runHomeInit(cmd *cobra.Command) error {
+	view := ui.New(cmd)
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
@@ -83,7 +85,7 @@ func runHomeInit(cmd *cobra.Command) error {
 		return err
 	}
 	if _, err := os.Stat(manifestPath); err == nil {
-		fmt.Fprintf(cmd.OutOrStdout(), "manifest already exists: %s\n", manifestPath)
+		view.Infof("manifest already exists: %s", manifestPath)
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -93,7 +95,7 @@ func runHomeInit(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "created manifest: %s\n", createdPath)
+	view.Successf("created manifest: %s", createdPath)
 	return nil
 }
 
@@ -118,19 +120,19 @@ func resolveProjectInitCacheMode(cmd *cobra.Command, projectDir string, requeste
 }
 
 func promptProjectCacheMode(cmd *cobra.Command, current project.CacheMode) (project.CacheMode, error) {
+	view := ui.New(cmd)
+
 	defaultLabel := string(current)
 	if defaultLabel == "" {
 		defaultLabel = string(project.CacheModeLocal)
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Choose project cache mode [%s]:\n", defaultLabel)
-	fmt.Fprintln(cmd.OutOrStdout(), "1. local")
-	fmt.Fprintln(cmd.OutOrStdout(), "2. global")
-	fmt.Fprint(cmd.OutOrStdout(), "> ")
-
-	reader := bufio.NewReader(cmd.InOrStdin())
-	choice, err := reader.ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
+	choice, err := view.PromptSelect(
+		fmt.Sprintf("Choose project cache mode [%s]", defaultLabel),
+		[]string{string(project.CacheModeLocal), string(project.CacheModeGlobal)},
+		defaultLabel,
+	)
+	if err != nil && !errors.Is(err, os.ErrClosed) {
 		return "", err
 	}
 

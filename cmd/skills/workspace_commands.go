@@ -1,12 +1,11 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
 	"github.com/mattgiles/skills/internal/project"
 	"github.com/mattgiles/skills/internal/source"
+	"github.com/mattgiles/skills/internal/ui"
 )
 
 func newStatusCommand() *cobra.Command {
@@ -85,17 +84,21 @@ func newUpdateCommand() *cobra.Command {
 }
 
 func renderWorkspaceSummary(cmd *cobra.Command, summary workspaceSummary, verbose bool) {
-	fmt.Fprintf(cmd.OutOrStdout(), "scope: %s\n", summary.Scope)
+	view := ui.New(cmd)
+	rows := [][2]string{
+		{"Scope", string(summary.Scope)},
+	}
 	if summary.Root != "" {
-		fmt.Fprintf(cmd.OutOrStdout(), "root: %s\n", summary.Root)
+		rows = append(rows, [2]string{"Root", summary.Root})
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "installs: %s\n", summary.InstallDir)
+	rows = append(rows, [2]string{"Installs", summary.InstallDir})
 	if summary.CacheMode != "" {
-		fmt.Fprintf(cmd.OutOrStdout(), "cache: %s\n", summary.CacheMode)
+		rows = append(rows, [2]string{"Cache", summary.CacheMode})
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "worktrees: %s\n", summary.WorktreeRoot)
+	rows = append(rows, [2]string{"Worktrees", summary.WorktreeRoot})
 	if verbose && summary.RepoRoot != "" {
-		fmt.Fprintf(cmd.OutOrStdout(), "repos: %s\n", summary.RepoRoot)
+		rows = append(rows, [2]string{"Repos", summary.RepoRoot})
 	}
-	fmt.Fprintln(cmd.OutOrStdout())
+	_ = view.KeyValues("Workspace", rows)
+	view.Blank()
 }

@@ -1,12 +1,10 @@
 package main
 
 import (
-	"fmt"
-	"text/tabwriter"
-
 	"github.com/spf13/cobra"
 
 	"github.com/mattgiles/skills/internal/project"
+	"github.com/mattgiles/skills/internal/ui"
 )
 
 func renderProjectStatus(cmd *cobra.Command, report project.StatusReport, verbose bool) {
@@ -14,88 +12,55 @@ func renderProjectStatus(cmd *cobra.Command, report project.StatusReport, verbos
 }
 
 func renderWorkspaceStatus(cmd *cobra.Command, report project.StatusReport, verbose bool, noSources string, noSkills string) {
+	view := ui.New(cmd)
+
 	if len(report.Sources) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), noSources)
+		view.Infof("%s", noSources)
 	} else {
-		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(cmd.OutOrStdout(), "SOURCES")
-		if verbose {
-			fmt.Fprintln(w, "SOURCE\tSTATUS\tREF\tCOMMIT\tSTORED\tREPO_PATH\tWORKTREE_PATH\tMESSAGE")
-		} else {
-			fmt.Fprintln(w, "SOURCE\tSTATUS\tREF\tCOMMIT\tMESSAGE")
-		}
-		for _, src := range report.Sources {
-			if verbose {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-					src.Alias, src.Status, src.Ref, renderVerboseValue(src.Commit), renderVerboseValue(src.PreviousCommit),
-					renderVerboseValue(src.RepoPath), renderVerboseValue(src.WorktreePath), renderVerboseValue(src.Message))
-			} else {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", src.Alias, src.Status, src.Ref, src.Commit, src.Message)
-			}
-		}
-		_ = w.Flush()
+		_ = view.RenderTable(ui.Table{
+			Title:   "Sources",
+			Columns: sourceColumns(verbose),
+			Rows:    sourceRows(report.Sources, verbose),
+		})
 	}
 
+	view.Blank()
+
 	if len(report.SkillLinks) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), noSkills)
+		view.Infof("%s", noSkills)
 	} else {
-		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(cmd.OutOrStdout(), "\nSKILLS")
-		if verbose {
-			fmt.Fprintln(w, "SOURCE\tSKILL\tSTATUS\tPATH\tTARGET\tMESSAGE")
-		} else {
-			fmt.Fprintln(w, "SOURCE\tSKILL\tSTATUS\tPATH\tMESSAGE")
-		}
-		for _, link := range report.SkillLinks {
-			if verbose {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-					link.Source, link.Skill, link.Status, renderVerboseValue(link.Path),
-					renderVerboseValue(link.Target), renderVerboseValue(link.Message))
-			} else {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", link.Source, link.Skill, link.Status, link.Path, link.Message)
-			}
-		}
-		_ = w.Flush()
+		_ = view.RenderTable(ui.Table{
+			Title:   "Skills",
+			Columns: linkColumns(verbose),
+			Rows:    linkRows(report.SkillLinks, verbose),
+		})
 	}
 
 	if len(report.ClaudeLinks) > 0 {
-		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(cmd.OutOrStdout(), "\nCLAUDE")
-		if verbose {
-			fmt.Fprintln(w, "SOURCE\tSKILL\tSTATUS\tPATH\tTARGET\tMESSAGE")
-		} else {
-			fmt.Fprintln(w, "SOURCE\tSKILL\tSTATUS\tPATH\tMESSAGE")
-		}
-		for _, link := range report.ClaudeLinks {
-			if verbose {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-					link.Source, link.Skill, link.Status, renderVerboseValue(link.Path),
-					renderVerboseValue(link.Target), renderVerboseValue(link.Message))
-			} else {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", link.Source, link.Skill, link.Status, link.Path, link.Message)
-			}
-		}
-		_ = w.Flush()
+		view.Blank()
+		_ = view.RenderTable(ui.Table{
+			Title:   "Claude",
+			Columns: linkColumns(verbose),
+			Rows:    linkRows(report.ClaudeLinks, verbose),
+		})
 	}
 
 	if len(report.StaleSkillLinks) > 0 {
-		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(cmd.OutOrStdout(), "\nSTALE_SKILLS")
-		fmt.Fprintln(w, "STALE_PATH\tSOURCE\tSKILL")
-		for _, link := range report.StaleSkillLinks {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", link.Path, link.Source, link.Skill)
-		}
-		_ = w.Flush()
+		view.Blank()
+		_ = view.RenderTable(ui.Table{
+			Title:   "Stale Skills",
+			Columns: []string{"Stale Path", "Source", "Skill"},
+			Rows:    staleLinkRows(report.StaleSkillLinks),
+		})
 	}
 
 	if len(report.StaleClaudeLinks) > 0 {
-		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(cmd.OutOrStdout(), "\nSTALE_CLAUDE")
-		fmt.Fprintln(w, "STALE_PATH\tSOURCE\tSKILL")
-		for _, link := range report.StaleClaudeLinks {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", link.Path, link.Source, link.Skill)
-		}
-		_ = w.Flush()
+		view.Blank()
+		_ = view.RenderTable(ui.Table{
+			Title:   "Stale Claude",
+			Columns: []string{"Stale Path", "Source", "Skill"},
+			Rows:    staleLinkRows(report.StaleClaudeLinks),
+		})
 	}
 }
 
@@ -104,120 +69,162 @@ func renderProjectSync(cmd *cobra.Command, result project.SyncResult, verbose bo
 }
 
 func renderWorkspaceSync(cmd *cobra.Command, result project.SyncResult, verbose bool) {
+	view := ui.New(cmd)
+
 	if result.DryRun {
-		fmt.Fprintln(cmd.OutOrStdout(), "dry-run")
+		view.Infof("dry-run")
+		view.Blank()
 	}
 
 	if len(result.Sources) > 0 {
-		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(cmd.OutOrStdout(), "SOURCES")
-		if verbose {
-			fmt.Fprintln(w, "SOURCE\tSTATUS\tREF\tCOMMIT\tSTORED\tREPO_PATH\tWORKTREE_PATH\tMESSAGE")
-		} else {
-			fmt.Fprintln(w, "SOURCE\tSTATUS\tREF\tCOMMIT\tMESSAGE")
-		}
-		for _, src := range result.Sources {
-			if verbose {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-					src.Alias, src.Status, src.Ref, renderVerboseValue(src.Commit), renderVerboseValue(src.PreviousCommit),
-					renderVerboseValue(src.RepoPath), renderVerboseValue(src.WorktreePath), renderVerboseValue(src.Message))
-			} else {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", src.Alias, src.Status, src.Ref, src.Commit, src.Message)
-			}
-		}
-		_ = w.Flush()
+		_ = view.RenderTable(ui.Table{
+			Title:   "Sources",
+			Columns: sourceColumns(verbose),
+			Rows:    sourceRows(result.Sources, verbose),
+		})
 	}
 
 	if len(result.SkillLinks) > 0 {
-		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(cmd.OutOrStdout(), "\nSKILLS")
-		if verbose {
-			fmt.Fprintln(w, "SOURCE\tSKILL\tSTATUS\tPATH\tTARGET\tMESSAGE")
-		} else {
-			fmt.Fprintln(w, "SOURCE\tSKILL\tSTATUS\tPATH\tMESSAGE")
-		}
-		for _, link := range result.SkillLinks {
-			if verbose {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-					link.Source, link.Skill, link.Status, renderVerboseValue(link.Path),
-					renderVerboseValue(link.Target), renderVerboseValue(link.Message))
-			} else {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", link.Source, link.Skill, link.Status, link.Path, link.Message)
-			}
-		}
-		_ = w.Flush()
+		view.Blank()
+		_ = view.RenderTable(ui.Table{
+			Title:   "Skills",
+			Columns: linkColumns(verbose),
+			Rows:    linkRows(result.SkillLinks, verbose),
+		})
 	}
 
 	if len(result.ClaudeLinks) > 0 {
-		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(cmd.OutOrStdout(), "\nCLAUDE")
-		if verbose {
-			fmt.Fprintln(w, "SOURCE\tSKILL\tSTATUS\tPATH\tTARGET\tMESSAGE")
-		} else {
-			fmt.Fprintln(w, "SOURCE\tSKILL\tSTATUS\tPATH\tMESSAGE")
-		}
-		for _, link := range result.ClaudeLinks {
-			if verbose {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-					link.Source, link.Skill, link.Status, renderVerboseValue(link.Path),
-					renderVerboseValue(link.Target), renderVerboseValue(link.Message))
-			} else {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", link.Source, link.Skill, link.Status, link.Path, link.Message)
-			}
-		}
-		_ = w.Flush()
+		view.Blank()
+		_ = view.RenderTable(ui.Table{
+			Title:   "Claude",
+			Columns: linkColumns(verbose),
+			Rows:    linkRows(result.ClaudeLinks, verbose),
+		})
 	}
 
 	if len(result.PrunedSkillLinks) > 0 {
-		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(cmd.OutOrStdout(), "\nPRUNED_SKILLS")
-		fmt.Fprintln(w, "PRUNED_PATH")
-		for _, path := range result.PrunedSkillLinks {
-			fmt.Fprintf(w, "%s\n", path)
-		}
-		_ = w.Flush()
+		view.Blank()
+		_ = view.RenderTable(ui.Table{
+			Title:   "Pruned Skills",
+			Columns: []string{"Pruned Path"},
+			Rows:    pathRows(result.PrunedSkillLinks),
+		})
 	}
 
 	if len(result.PrunedClaudeLinks) > 0 {
-		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(cmd.OutOrStdout(), "\nPRUNED_CLAUDE")
-		fmt.Fprintln(w, "PRUNED_PATH")
-		for _, path := range result.PrunedClaudeLinks {
-			fmt.Fprintf(w, "%s\n", path)
-		}
-		_ = w.Flush()
+		view.Blank()
+		_ = view.RenderTable(ui.Table{
+			Title:   "Pruned Claude",
+			Columns: []string{"Pruned Path"},
+			Rows:    pathRows(result.PrunedClaudeLinks),
+		})
 	}
 }
 
 func renderProjectUpdate(cmd *cobra.Command, result project.UpdateResult, verbose bool) {
+	view := ui.New(cmd)
+
 	if result.DryRun {
-		fmt.Fprintln(cmd.OutOrStdout(), "dry-run")
+		view.Infof("dry-run")
+		view.Blank()
 	}
 
 	if len(result.Sources) > 0 {
-		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(cmd.OutOrStdout(), "SOURCES")
-		if verbose {
-			fmt.Fprintln(w, "SOURCE\tSTATUS\tREF\tCOMMIT\tSTORED\tREPO_PATH\tWORKTREE_PATH\tMESSAGE")
-		} else {
-			fmt.Fprintln(w, "SOURCE\tSTATUS\tREF\tCOMMIT\tMESSAGE")
-		}
-		for _, src := range result.Sources {
-			if verbose {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-					src.Alias, src.Status, src.Ref, renderVerboseValue(src.Commit), renderVerboseValue(src.PreviousCommit),
-					renderVerboseValue(src.RepoPath), renderVerboseValue(src.WorktreePath), renderVerboseValue(src.Message))
-			} else {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", src.Alias, src.Status, src.Ref, src.Commit, src.Message)
-			}
-		}
-		_ = w.Flush()
+		_ = view.RenderTable(ui.Table{
+			Title:   "Sources",
+			Columns: sourceColumns(verbose),
+			Rows:    sourceRows(result.Sources, verbose),
+		})
 	}
 
 	if result.Sync != nil {
-		fmt.Fprintln(cmd.OutOrStdout())
+		view.Blank()
 		renderProjectSync(cmd, *result.Sync, verbose)
 	}
+}
+
+func sourceColumns(verbose bool) []string {
+	if verbose {
+		return []string{"Source", "Status", "Ref", "Commit", "Stored", "Repo Path", "Worktree Path", "Message"}
+	}
+	return []string{"Source", "Status", "Ref", "Commit", "Message"}
+}
+
+func sourceRows(sources []project.SourceReport, verbose bool) [][]string {
+	rows := make([][]string, 0, len(sources))
+	for _, src := range sources {
+		if verbose {
+			rows = append(rows, []string{
+				src.Alias,
+				src.Status,
+				src.Ref,
+				renderVerboseValue(src.Commit),
+				renderVerboseValue(src.PreviousCommit),
+				renderVerboseValue(src.RepoPath),
+				renderVerboseValue(src.WorktreePath),
+				renderVerboseValue(src.Message),
+			})
+			continue
+		}
+
+		rows = append(rows, []string{
+			src.Alias,
+			src.Status,
+			src.Ref,
+			src.Commit,
+			src.Message,
+		})
+	}
+	return rows
+}
+
+func linkColumns(verbose bool) []string {
+	if verbose {
+		return []string{"Source", "Skill", "Status", "Path", "Target", "Message"}
+	}
+	return []string{"Source", "Skill", "Status", "Path", "Message"}
+}
+
+func linkRows(links []project.LinkReport, verbose bool) [][]string {
+	rows := make([][]string, 0, len(links))
+	for _, link := range links {
+		if verbose {
+			rows = append(rows, []string{
+				link.Source,
+				link.Skill,
+				link.Status,
+				renderVerboseValue(link.Path),
+				renderVerboseValue(link.Target),
+				renderVerboseValue(link.Message),
+			})
+			continue
+		}
+
+		rows = append(rows, []string{
+			link.Source,
+			link.Skill,
+			link.Status,
+			link.Path,
+			link.Message,
+		})
+	}
+	return rows
+}
+
+func staleLinkRows(links []project.ManagedLink) [][]string {
+	rows := make([][]string, 0, len(links))
+	for _, link := range links {
+		rows = append(rows, []string{link.Path, link.Source, link.Skill})
+	}
+	return rows
+}
+
+func pathRows(paths []string) [][]string {
+	rows := make([][]string, 0, len(paths))
+	for _, path := range paths {
+		rows = append(rows, []string{path})
+	}
+	return rows
 }
 
 func renderVerboseValue(value string) string {

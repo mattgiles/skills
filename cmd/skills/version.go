@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/mattgiles/skills/internal/ui"
 )
 
 var (
@@ -19,7 +21,15 @@ func newVersionCommand() *cobra.Command {
 		Use:   "version",
 		Short: "Show version information",
 		Run: func(cmd *cobra.Command, _ []string) {
-			fmt.Fprintln(cmd.OutOrStdout(), versionSummary())
+			view := ui.New(cmd)
+			view.Header("Version")
+			_ = view.KeyValues("Build", [][2]string{
+				{"Version", version},
+				{"Commit", commit},
+				{"Date", date},
+				{"Go", runtime.Version()},
+				{"Platform", fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)},
+			})
 		},
 	}
 }

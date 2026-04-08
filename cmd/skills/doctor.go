@@ -3,14 +3,13 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
 	"github.com/mattgiles/skills/internal/doctor"
+	"github.com/mattgiles/skills/internal/ui"
 )
 
 var errDoctorFoundProblems = errors.New("doctor found problems")
@@ -82,6 +81,7 @@ func renderDoctorSummary(cmd *cobra.Command, ctx context.Context, target workspa
 }
 
 func renderDoctor(cmd *cobra.Command, report doctor.Report, verbose bool) {
+	view := ui.New(cmd)
 	sections := []string{
 		doctor.SectionEnvironment,
 		doctor.SectionConfig,
@@ -100,56 +100,60 @@ func renderDoctor(cmd *cobra.Command, report doctor.Report, verbose bool) {
 
 	for i, section := range sections {
 		if i > 0 {
-			fmt.Fprintln(cmd.OutOrStdout())
+			view.Blank()
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), section)
 
 		if section == doctor.SectionHints {
 			hints := report.Hints()
 			if len(hints) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "INFO  ok  no action needed")
+				view.Infof("%s: no action needed", section)
 				continue
 			}
 			for _, hint := range hints {
-				fmt.Fprintf(cmd.OutOrStdout(), "INFO  hint  %s\n", hint)
+				view.Infof("%s: %s", section, hint)
 			}
 			continue
 		}
 
 		findings := findingsBySection[section]
 		if len(findings) == 0 {
-			fmt.Fprintln(cmd.OutOrStdout(), "INFO  ok  no issues found")
+			view.Infof("%s: no issues found", section)
 			continue
 		}
 
-		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		if verbose {
-			fmt.Fprintln(w, "SEVERITY\tCODE\tSUBJECT\tMESSAGE\tDETAILS")
-		} else {
-			fmt.Fprintln(w, "SEVERITY\tCODE\tSUBJECT\tMESSAGE")
-		}
+		rows := make([][]string, 0, len(findings))
 		for _, finding := range findings {
 			if verbose {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-					finding.Severity,
+				rows = append(rows, []string{
+					string(finding.Severity),
 					finding.Code,
 					renderDoctorValue(finding.Subject),
 					renderDoctorValue(finding.Message),
 					renderDoctorDetails(finding),
-				)
+				})
 			} else {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-					finding.Severity,
+				rows = append(rows, []string{
+					string(finding.Severity),
 					finding.Code,
 					renderDoctorValue(finding.Subject),
 					renderDoctorValue(finding.Message),
-				)
+				})
 			}
 		}
-		_ = w.Flush()
+
+		columns := []string{"Severity", "Code", "Subject", "Message"}
+		if verbose {
+			columns = append(columns, "Details")
+		}
+		_ = view.RenderTable(ui.Table{
+			Title:   section,
+			Columns: columns,
+			Rows:    rows,
+		})
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "\ndoctor: %d errors, %d warnings\n", report.ErrorCount(), report.WarningCount())
+	view.Blank()
+	view.Infof("doctor: %d errors, %d warnings", report.ErrorCount(), report.WarningCount())
 }
 
 func renderDoctorValue(value string) string {

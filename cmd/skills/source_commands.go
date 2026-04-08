@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
 	"github.com/mattgiles/skills/internal/discovery"
 	"github.com/mattgiles/skills/internal/source"
+	"github.com/mattgiles/skills/internal/ui"
 )
 
 func newSourceCommand() *cobra.Command {
@@ -35,6 +35,7 @@ func newSourceAddCommand() *cobra.Command {
 		Short: "Register a skill source",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			view := ui.New(cmd)
 			if err := source.EnsureGitAvailable(); err != nil {
 				return err
 			}
@@ -68,7 +69,7 @@ func newSourceAddCommand() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "registered source %q\n", alias)
+			view.Successf("registered source %q", alias)
 			return nil
 		},
 	}
@@ -85,35 +86,38 @@ func newSourceListCommand() *cobra.Command {
 		Use:   "list",
 		Short: "List declared sources",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			view := ui.New(cmd)
 			sources, err := resolveManifestSources(cmd.Context(), global, nil)
 			if err != nil {
 				return err
 			}
 			if len(sources) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "no sources configured")
+				view.Infof("no sources configured")
 				return nil
 			}
 
-			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			if verboseEnabled(cmd) {
-				fmt.Fprintln(w, "ALIAS\tSTATUS\tREMOTE\tLOCAL\tPATH\tURL")
-			} else {
-				fmt.Fprintln(w, "ALIAS\tSTATUS\tREMOTE\tLOCAL")
-			}
-
+			rows := make([][]string, 0, len(sources))
 			for _, src := range sources {
 				status := source.Status(cmd.Context(), src)
 				state := renderSourceState(status)
 				remote := renderRemoteHead(status)
 				local := renderLocalHead(status)
 				if verboseEnabled(cmd) {
-					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", src.Alias, state, remote, local, src.RepoPath, src.URL)
+					rows = append(rows, []string{src.Alias, state, remote, local, src.RepoPath, src.URL})
 				} else {
-					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", src.Alias, state, remote, local)
+					rows = append(rows, []string{src.Alias, state, remote, local})
 				}
 			}
 
-			return w.Flush()
+			columns := []string{"Alias", "Status", "Remote", "Local"}
+			if verboseEnabled(cmd) {
+				columns = append(columns, "Path", "URL")
+			}
+			return view.RenderTable(ui.Table{
+				Title:   "Sources",
+				Columns: columns,
+				Rows:    rows,
+			})
 		},
 	}
 
@@ -128,6 +132,7 @@ func newSourceSyncCommand() *cobra.Command {
 		Use:   "sync [alias...]",
 		Short: "Clone or fetch declared sources",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			view := ui.New(cmd)
 			if err := source.EnsureGitAvailable(); err != nil {
 				return err
 			}
@@ -137,52 +142,32 @@ func newSourceSyncCommand() *cobra.Command {
 				return err
 			}
 			if len(selected) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "no sources configured")
+				view.Infof("no sources configured")
 				return nil
 			}
 
-			if verboseEnabled(cmd) {
-				type syncResult struct {
-					action string
-					source source.Source
-					status source.SourceStatus
-				}
-
-				results := make([]syncResult, 0, len(selected))
-				for _, src := range selected {
-					cloned, err := source.Sync(cmd.Context(), src)
-					if err != nil {
-						return fmt.Errorf("sync %s: %w", src.Alias, err)
-					}
-
-					action := "fetched"
-					if cloned {
-						action = "cloned"
-					}
-					results = append(results, syncResult{
-						action: action,
-						source: src,
-						status: source.Status(cmd.Context(), src),
-					})
-				}
-
-				w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-				fmt.Fprintln(w, "ACTION\tALIAS\tREMOTE\tLOCAL\tPATH\tURL")
-				for _, result := range results {
-					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-						result.action,
-						result.source.Alias,
-						renderRemoteHead(result.status),
-						renderLocalHead(result.status),
-						result.source.RepoPath,
-						result.source.URL,
-					)
-				}
-				return w.Flush()
+			type syncResult struct {
+				action string
+				source source.Source
+				status source.SourceStatus
 			}
 
+			results := make([]syncResult, 0, len(selected))
 			for _, src := range selected {
-				cloned, err := source.Sync(cmd.Context(), src)
+				var cloned bool
+				err := view.RunTask(
+					fmt.Sprintf("Syncing source %q", src.Alias),
+					ui.TaskOptions{
+						UseErrorWriter: true,
+						SuccessText:    fmt.Sprintf("Synced source %q", src.Alias),
+						FailureText:    fmt.Sprintf("Failed to sync source %q", src.Alias),
+					},
+					func() error {
+						var syncErr error
+						cloned, syncErr = source.Sync(cmd.Context(), src)
+						return syncErr
+					},
+				)
 				if err != nil {
 					return fmt.Errorf("sync %s: %w", src.Alias, err)
 				}
@@ -191,10 +176,36 @@ func newSourceSyncCommand() *cobra.Command {
 				if cloned {
 					action = "cloned"
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", action, src.Alias)
+				results = append(results, syncResult{
+					action: action,
+					source: src,
+					status: source.Status(cmd.Context(), src),
+				})
 			}
 
-			return nil
+			rows := make([][]string, 0, len(results))
+			columns := []string{"Action", "Alias", "Remote", "Local"}
+			if verboseEnabled(cmd) {
+				columns = append(columns, "Path", "URL")
+			}
+			for _, result := range results {
+				row := []string{
+					result.action,
+					result.source.Alias,
+					renderRemoteHead(result.status),
+					renderLocalHead(result.status),
+				}
+				if verboseEnabled(cmd) {
+					row = append(row, result.source.RepoPath, result.source.URL)
+				}
+				rows = append(rows, row)
+			}
+
+			return view.RenderTable(ui.Table{
+				Title:   "Source Sync",
+				Columns: columns,
+				Rows:    rows,
+			})
 		},
 	}
 
@@ -215,12 +226,13 @@ func newSkillCommand() *cobra.Command {
 		Use:   "list",
 		Short: "List discovered skills",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			view := ui.New(cmd)
 			selected, err := skillListSources(cmd.Context(), global, sourceAlias)
 			if err != nil {
 				return err
 			}
 			if len(selected) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "no sources configured")
+				view.Infof("no sources configured")
 				return nil
 			}
 
@@ -228,7 +240,7 @@ func newSkillCommand() *cobra.Command {
 			for _, src := range selected {
 				status := source.Status(cmd.Context(), src)
 				if !status.Exists || !status.IsGitRepo {
-					fmt.Fprintf(cmd.ErrOrStderr(), "warning: skipping unsynced source %q\n", src.Alias)
+					view.Warningf("skipping unsynced source %q", src.Alias)
 					continue
 				}
 
@@ -240,7 +252,7 @@ func newSkillCommand() *cobra.Command {
 			}
 
 			if len(skills) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "no skills found")
+				view.Infof("no skills found")
 				return nil
 			}
 
@@ -254,20 +266,24 @@ func newSkillCommand() *cobra.Command {
 				return skills[i].RelativePath < skills[j].RelativePath
 			})
 
-			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			if verboseEnabled(cmd) {
-				fmt.Fprintln(w, "SOURCE\tNAME\tPATH\tABS_PATH")
-			} else {
-				fmt.Fprintln(w, "SOURCE\tNAME\tPATH")
-			}
+			rows := make([][]string, 0, len(skills))
 			for _, skill := range skills {
 				if verboseEnabled(cmd) {
-					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", skill.SourceAlias, skill.Name, skill.RelativePath, skill.Path)
+					rows = append(rows, []string{skill.SourceAlias, skill.Name, skill.RelativePath, skill.Path})
 				} else {
-					fmt.Fprintf(w, "%s\t%s\t%s\n", skill.SourceAlias, skill.Name, skill.RelativePath)
+					rows = append(rows, []string{skill.SourceAlias, skill.Name, skill.RelativePath})
 				}
 			}
-			return w.Flush()
+
+			columns := []string{"Source", "Name", "Path"}
+			if verboseEnabled(cmd) {
+				columns = append(columns, "Abs Path")
+			}
+			return view.RenderTable(ui.Table{
+				Title:   "Skills",
+				Columns: columns,
+				Rows:    rows,
+			})
 		},
 	}
 

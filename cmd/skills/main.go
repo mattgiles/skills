@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/spf13/pflag"
+
+	"github.com/mattgiles/skills/internal/ui"
 )
 
 func main() {
@@ -23,7 +24,7 @@ func run() int {
 	if err := newRootCommand().ExecuteContext(ctx); err != nil {
 		exitCode := exitCodeForError(err)
 		if exitCode != exitCodeSuccess {
-			fmt.Fprintln(os.Stderr, err)
+			ui.PrintError(os.Stderr, err)
 		}
 		return exitCode
 	}

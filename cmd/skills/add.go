@@ -11,6 +11,7 @@ import (
 	"github.com/mattgiles/skills/internal/config"
 	"github.com/mattgiles/skills/internal/project"
 	"github.com/mattgiles/skills/internal/source"
+	"github.com/mattgiles/skills/internal/ui"
 )
 
 type addSkillChange struct {
@@ -35,6 +36,7 @@ func newAddCommand() *cobra.Command {
 		Short: "Add a skill to the active manifest and sync it",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			view := ui.New(cmd)
 			if err := source.EnsureGitAvailable(); err != nil {
 				return err
 			}
@@ -71,7 +73,7 @@ func newAddCommand() *cobra.Command {
 				return err
 			}
 			if !change.AddedSkill {
-				fmt.Fprintf(cmd.OutOrStdout(), "skill %q from source %q is already declared\n", skillName, sourceAlias)
+				view.Infof("skill %q from source %q is already declared", skillName, sourceAlias)
 				return nil
 			}
 
@@ -88,9 +90,10 @@ func newAddCommand() *cobra.Command {
 			}
 
 			if change.AddedSource {
-				fmt.Fprintf(cmd.OutOrStdout(), "added source %q (%s @ %s)\n", sourceAlias, change.SourceURL, change.SourceRef)
+				view.Successf("added source %q (%s @ %s)", sourceAlias, change.SourceURL, change.SourceRef)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "added skill %q from source %q\n\n", skillName, sourceAlias)
+			view.Successf("added skill %q from source %q", skillName, sourceAlias)
+			view.Blank()
 			renderWorkspaceSummary(cmd, outcome.summary, verboseEnabled(cmd))
 			renderWorkspaceSync(cmd, outcome.result, verboseEnabled(cmd))
 			return nil

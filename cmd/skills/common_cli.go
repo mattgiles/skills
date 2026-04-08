@@ -2,13 +2,13 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/mattgiles/skills/internal/config"
 	"github.com/mattgiles/skills/internal/project"
+	"github.com/mattgiles/skills/internal/ui"
 )
 
 func newConfigInitCommand() *cobra.Command {
@@ -16,13 +16,14 @@ func newConfigInitCommand() *cobra.Command {
 		Use:   "init",
 		Short: "Create the default config file",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			view := ui.New(cmd)
 			configPath, err := config.DefaultConfigPath()
 			if err != nil {
 				return err
 			}
 
 			if _, err := os.Stat(configPath); err == nil {
-				fmt.Fprintf(cmd.OutOrStdout(), "config already exists: %s\n", configPath)
+				view.Infof("config already exists at %s", configPath)
 				return nil
 			} else if !errors.Is(err, os.ErrNotExist) {
 				return err
@@ -33,7 +34,7 @@ func newConfigInitCommand() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "created config: %s\n", configPath)
+			view.Successf("created config at %s", configPath)
 			return nil
 		},
 	}

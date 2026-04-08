@@ -5,6 +5,7 @@ import (
 
 	"github.com/mattgiles/skills/internal/doctor"
 	"github.com/mattgiles/skills/internal/project"
+	"github.com/mattgiles/skills/internal/ui"
 )
 
 func runStatusCommand(cmd *cobra.Command, target workspaceTarget) error {
@@ -33,16 +34,24 @@ func runStatusCommand(cmd *cobra.Command, target workspaceTarget) error {
 }
 
 func runSyncCommand(cmd *cobra.Command, target workspaceTarget, options project.SyncOptions) error {
+	view := ui.New(cmd)
 	var (
 		result project.SyncResult
 		err    error
 	)
 
-	if target.Scope == scopeGlobal {
-		result, err = project.HomeSync(cmd.Context(), target.Config, options)
-	} else {
-		result, err = project.Sync(cmd.Context(), target.ProjectRoot, options)
-	}
+	err = view.RunTask("Syncing workspace", ui.TaskOptions{
+		UseErrorWriter: true,
+		SuccessText:    "Synced workspace",
+		FailureText:    "Failed to sync workspace",
+	}, func() error {
+		if target.Scope == scopeGlobal {
+			result, err = project.HomeSync(cmd.Context(), target.Config, options)
+		} else {
+			result, err = project.Sync(cmd.Context(), target.ProjectRoot, options)
+		}
+		return err
+	})
 	if err != nil {
 		return err
 	}
@@ -53,16 +62,24 @@ func runSyncCommand(cmd *cobra.Command, target workspaceTarget, options project.
 }
 
 func runUpdateCommand(cmd *cobra.Command, target workspaceTarget, options project.UpdateOptions) error {
+	view := ui.New(cmd)
 	var (
 		result project.UpdateResult
 		err    error
 	)
 
-	if target.Scope == scopeGlobal {
-		result, err = project.HomeUpdate(cmd.Context(), target.Config, options)
-	} else {
-		result, err = project.Update(cmd.Context(), target.ProjectRoot, options)
-	}
+	err = view.RunTask("Updating workspace", ui.TaskOptions{
+		UseErrorWriter: true,
+		SuccessText:    "Updated workspace",
+		FailureText:    "Failed to update workspace",
+	}, func() error {
+		if target.Scope == scopeGlobal {
+			result, err = project.HomeUpdate(cmd.Context(), target.Config, options)
+		} else {
+			result, err = project.Update(cmd.Context(), target.ProjectRoot, options)
+		}
+		return err
+	})
 	if err != nil {
 		return err
 	}
@@ -74,7 +91,19 @@ func runUpdateCommand(cmd *cobra.Command, target workspaceTarget, options projec
 
 func runDoctorCommand(cmd *cobra.Command, target workspaceTarget) error {
 	scope := doctorScope(target.Scope)
-	report, err := doctorCheck(cmd.Context(), doctorTargetDir(target), scope)
+	view := ui.New(cmd)
+	var (
+		report doctor.Report
+		err    error
+	)
+	err = view.RunTask("Running doctor checks", ui.TaskOptions{
+		UseErrorWriter: true,
+		SuccessText:    "Doctor checks completed",
+		FailureText:    "Doctor checks failed",
+	}, func() error {
+		report, err = doctorCheck(cmd.Context(), doctorTargetDir(target), scope)
+		return err
+	})
 	if err != nil {
 		return err
 	}
@@ -88,15 +117,34 @@ func runDoctorCommand(cmd *cobra.Command, target workspaceTarget) error {
 }
 
 func runAddSync(cmd *cobra.Command, target sourceManifestTarget) (addSyncOutcome, error) {
+	view := ui.New(cmd)
 	if target.Scope == scopeGlobal {
-		result, err := project.HomeSync(cmd.Context(), target.Config, project.SyncOptions{})
+		var result project.SyncResult
+		err := view.RunTask("Syncing added skill", ui.TaskOptions{
+			UseErrorWriter: true,
+			SuccessText:    "Synced added skill",
+			FailureText:    "Failed to sync added skill",
+		}, func() error {
+			var syncErr error
+			result, syncErr = project.HomeSync(cmd.Context(), target.Config, project.SyncOptions{})
+			return syncErr
+		})
 		if err != nil {
 			return addSyncOutcome{}, err
 		}
 		return addSyncOutcome{summary: target.Summary, result: result}, nil
 	}
 
-	result, err := project.Sync(cmd.Context(), target.ProjectRoot, project.SyncOptions{})
+	var result project.SyncResult
+	err := view.RunTask("Syncing added skill", ui.TaskOptions{
+		UseErrorWriter: true,
+		SuccessText:    "Synced added skill",
+		FailureText:    "Failed to sync added skill",
+	}, func() error {
+		var syncErr error
+		result, syncErr = project.Sync(cmd.Context(), target.ProjectRoot, project.SyncOptions{})
+		return syncErr
+	})
 	if err != nil {
 		return addSyncOutcome{}, err
 	}

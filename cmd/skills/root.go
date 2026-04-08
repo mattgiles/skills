@@ -1,6 +1,10 @@
 package main
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
+
+	"github.com/mattgiles/skills/internal/ui"
+)
 
 func newRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -26,6 +30,13 @@ func newRootCommand() *cobra.Command {
 	cmd.AddCommand(newSourceCommand())
 	cmd.AddCommand(newSkillCommand())
 	cmd.AddCommand(newVersionCommand())
+
+	cmd.SetHelpFunc(func(c *cobra.Command, _ []string) {
+		_ = ui.New(c).RenderHelp(c)
+	})
+	cmd.SetUsageFunc(func(c *cobra.Command) error {
+		return ui.New(c).RenderHelp(c)
+	})
 
 	return cmd
 }

@@ -41,26 +41,26 @@ Claude adapter links use the same symlink lifecycle statuses as canonical skill 
 
 ## Output Sections
 
-Status and sync commands use:
+The CLI now renders human-facing terminal output through `pterm`.
 
-- `SOURCES`
-- `SKILLS`
-- `CLAUDE`
+Status, sync, and update commands render titled sections such as:
 
-Status may also include:
+- `Workspace`
+- `Sources`
+- `Skills`
+- `Claude`
 
-- `STALE_SKILLS`
-- `STALE_CLAUDE`
+Additional sections may appear when relevant:
 
-Sync may also include:
+- `Stale Skills`
+- `Stale Claude`
+- `Pruned Skills`
+- `Pruned Claude`
 
-- `PRUNED_SKILLS`
-- `PRUNED_CLAUDE`
-
-Dry-run commands print:
+Dry-run commands emit:
 
 ```text
-dry-run
+INFO: dry-run
 ```
 
-before their tables.
+before the relevant result tables.

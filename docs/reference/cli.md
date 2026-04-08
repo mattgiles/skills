@@ -28,6 +28,7 @@ Notes:
 
 - `--help` exits with `0`
 - command output and diagnostics still follow the existing stdout/stderr split
+- human-facing command output is rendered through `pterm`
 - machine-readable output is intentionally deferred to a separate later feature
 
 ## Command Tree

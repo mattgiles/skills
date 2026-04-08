@@ -81,7 +81,7 @@ func TestSourceSyncClonesAndSkillListAggregatesInGlobalScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sync error = %v, stderr = %s", err, stderr)
 	}
-	if !strings.Contains(stdout, "cloned\trepo-one") || !strings.Contains(stdout, "cloned\trepo-two") {
+	if !strings.Contains(stdout, "cloned  repo-one") || !strings.Contains(stdout, "cloned  repo-two") {
 		t.Fatalf("sync stdout = %q", stdout)
 	}
 
@@ -115,7 +115,7 @@ func TestSkillListSkipsUnsyncedSource(t *testing.T) {
 	if !strings.Contains(stdout, "no skills found") {
 		t.Fatalf("stdout = %q", stdout)
 	}
-	if !strings.Contains(stderr, `warning: skipping unsynced source "repo-one"`) {
+	if !strings.Contains(stderr, `WARNING: skipping unsynced source "repo-one"`) {
 		t.Fatalf("stderr = %q", stderr)
 	}
 }
@@ -149,7 +149,7 @@ func TestRepoSourceCommandsUseProjectManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("source sync error = %v, stderr = %s", err, stderr)
 	}
-	if !strings.Contains(stdout, "cloned\trepo-one") {
+	if !strings.Contains(stdout, "cloned  repo-one") {
 		t.Fatalf("sync stdout = %q", stdout)
 	}
 }
@@ -500,7 +500,7 @@ func TestVersionCommandShowsBuildInfo(t *testing.T) {
 		t.Fatalf("version error = %v, stderr = %s", err, stderr)
 	}
 
-	for _, want := range []string{"version=dev", "commit=unknown", "date=unknown", "platform="} {
+	for _, want := range []string{"Version", "Commit", "Date", "Platform"} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("stdout missing %q:\n%s", want, stdout)
 		}
