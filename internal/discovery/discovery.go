@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mattgiles/skills/internal/gitrepo"
 	"github.com/mattgiles/skills/internal/source"
 )
 
@@ -18,6 +19,72 @@ type DiscoveredSkill struct {
 }
 
 func Discover(sourceAlias string, repoPath string) ([]DiscoveredSkill, error) {
+	if tracked, ok, err := discoverTrackedPaths(repoPath); err != nil {
+		return nil, err
+	} else if ok {
+		return DiscoverFromPaths(sourceAlias, repoPath, tracked), nil
+	}
+
+	return discoverFromFilesystem(sourceAlias, repoPath)
+}
+
+func DiscoverAtCommit(ctx context.Context, src source.Source, rootPath string, commit string) ([]DiscoveredSkill, error) {
+	paths, err := source.ListFilesAtCommit(ctx, src, commit)
+	if err != nil {
+		return nil, err
+	}
+	return DiscoverFromPaths(src.Alias, rootPath, paths), nil
+}
+
+func discoverTrackedPaths(repoPath string) ([]string, bool, error) {
+	info, err := gitrepo.Discover(context.Background(), repoPath)
+	if err != nil {
+		return nil, false, err
+	}
+	if info.Root == "" {
+		return nil, false, nil
+	}
+
+	tracked, err := gitrepo.ListTracked(context.Background(), info.Root, nil)
+	if err != nil {
+		return nil, false, err
+	}
+
+	base := relativeTrackedBase(info.Root, repoPath)
+	if base == "" {
+		return tracked, true, nil
+	}
+
+	normalizedBase := filepath.ToSlash(base)
+	paths := make([]string, 0, len(tracked))
+	for _, path := range tracked {
+		normalizedPath := filepath.ToSlash(path)
+		prefix := normalizedBase + "/"
+		if strings.HasPrefix(normalizedPath, prefix) {
+			paths = append(paths, strings.TrimPrefix(normalizedPath, prefix))
+		}
+	}
+	return paths, true, nil
+}
+
+func relativeTrackedBase(repoRoot string, repoPath string) string {
+	resolvedRoot, err := filepath.EvalSymlinks(repoRoot)
+	if err != nil {
+		resolvedRoot = repoRoot
+	}
+	resolvedPath, err := filepath.EvalSymlinks(repoPath)
+	if err != nil {
+		resolvedPath = repoPath
+	}
+
+	rel, err := filepath.Rel(resolvedRoot, resolvedPath)
+	if err != nil || rel == "." {
+		return ""
+	}
+	return rel
+}
+
+func discoverFromFilesystem(sourceAlias string, repoPath string) ([]DiscoveredSkill, error) {
 	paths := make([]string, 0)
 
 	err := filepath.WalkDir(repoPath, func(path string, d fs.DirEntry, err error) error {
@@ -41,14 +108,6 @@ func Discover(sourceAlias string, repoPath string) ([]DiscoveredSkill, error) {
 	}
 
 	return DiscoverFromPaths(sourceAlias, repoPath, paths), nil
-}
-
-func DiscoverAtCommit(ctx context.Context, src source.Source, rootPath string, commit string) ([]DiscoveredSkill, error) {
-	paths, err := source.ListFilesAtCommit(ctx, src, commit)
-	if err != nil {
-		return nil, err
-	}
-	return DiscoverFromPaths(src.Alias, rootPath, paths), nil
 }
 
 func DiscoverFromPaths(sourceAlias string, repoPath string, paths []string) []DiscoveredSkill {
