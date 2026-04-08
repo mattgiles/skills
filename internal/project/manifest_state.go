@@ -1,6 +1,7 @@
 package project
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -86,7 +87,7 @@ type InitProjectOptions struct {
 	CacheMode CacheMode
 }
 
-func InitProject(projectDir string, options InitProjectOptions) (InitProjectResult, error) {
+func InitProject(ctx context.Context, projectDir string, options InitProjectOptions) (InitProjectResult, error) {
 	cacheMode := options.CacheMode
 	if cacheMode == "" {
 		current, err := LoadLocalConfig(projectDir)
@@ -104,7 +105,7 @@ func InitProject(projectDir string, options InitProjectOptions) (InitProjectResu
 		return InitProjectResult{}, err
 	}
 
-	ownership, err := InspectProjectOwnership(projectDir)
+	ownership, err := InspectProjectOwnershipContext(ctx, projectDir)
 	if err != nil {
 		return InitProjectResult{}, err
 	}

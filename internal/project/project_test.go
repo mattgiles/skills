@@ -124,7 +124,7 @@ func TestProjectSyncDryRunDoesNotWriteStateOrLinks(t *testing.T) {
 		"analytics/SKILL.md": "# analytics",
 	})
 
-	if _, err := InitProject(projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
+	if _, err := InitProject(context.Background(), projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
 		t.Fatalf("InitProject() error = %v", err)
 	}
 	writeProjectManifest(t, projectDir, manifestFor(remote, "main", []string{"analytics"}))
@@ -161,7 +161,7 @@ func TestProjectStatusAfterSyncIsHealthy(t *testing.T) {
 		"analytics/SKILL.md": "# analytics",
 	})
 
-	if _, err := InitProject(projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
+	if _, err := InitProject(context.Background(), projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
 		t.Fatalf("InitProject() error = %v", err)
 	}
 	writeProjectManifest(t, projectDir, manifestFor(remote, "main", []string{"analytics"}))
@@ -198,7 +198,7 @@ func TestProjectUpdateDryRunPreservesStateAndLinks(t *testing.T) {
 		"analytics/SKILL.md": "# analytics",
 	})
 
-	if _, err := InitProject(projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
+	if _, err := InitProject(context.Background(), projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
 		t.Fatalf("InitProject() error = %v", err)
 	}
 	writeProjectManifest(t, projectDir, manifestFor(remote, "main", []string{"analytics"}))
@@ -256,7 +256,7 @@ func TestProjectUpdateWithoutSyncLeavesStaleLinks(t *testing.T) {
 		"analytics/SKILL.md": "# analytics",
 	})
 
-	if _, err := InitProject(projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
+	if _, err := InitProject(context.Background(), projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
 		t.Fatalf("InitProject() error = %v", err)
 	}
 	writeProjectManifest(t, projectDir, manifestFor(remote, "main", []string{"analytics"}))
@@ -284,6 +284,24 @@ func TestProjectUpdateWithoutSyncLeavesStaleLinks(t *testing.T) {
 	assertLinkStatus(t, report.ClaudeLinks, "repo-one", "analytics", "linked")
 }
 
+func TestInitProjectPropagatesContext(t *testing.T) {
+	requireGit(t)
+	_ = newProjectTestEnv(t)
+	projectDir := resolvedPath(t, t.TempDir())
+	initGitRepo(t, projectDir)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := InitProject(ctx, projectDir, InitProjectOptions{CacheMode: CacheModeLocal})
+	if err == nil {
+		t.Fatal("expected InitProject() error")
+	}
+	if !strings.Contains(err.Error(), "context canceled") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestProjectSyncPrunesStaleLinks(t *testing.T) {
 	requireGit(t)
 	_ = newProjectTestEnv(t)
@@ -295,7 +313,7 @@ func TestProjectSyncPrunesStaleLinks(t *testing.T) {
 		"lint/SKILL.md":      "# lint",
 	})
 
-	if _, err := InitProject(projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
+	if _, err := InitProject(context.Background(), projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
 		t.Fatalf("InitProject() error = %v", err)
 	}
 	writeProjectManifest(t, projectDir, manifestFor(remote, "main", []string{"analytics", "lint"}))
@@ -332,7 +350,7 @@ func TestResolveProjectWorkspaceUsesConfiguredCacheRoots(t *testing.T) {
 	projectDir := resolvedPath(t, t.TempDir())
 	initGitRepo(t, projectDir)
 
-	if _, err := InitProject(projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
+	if _, err := InitProject(context.Background(), projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
 		t.Fatalf("InitProject() error = %v", err)
 	}
 
@@ -394,7 +412,7 @@ func TestProjectStatusReportsRefChangeAsUpdateAvailable(t *testing.T) {
 	runGit(t, remote, "commit", "-m", "prepare feature")
 	runGit(t, remote, "branch", "feature")
 
-	if _, err := InitProject(projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
+	if _, err := InitProject(context.Background(), projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
 		t.Fatalf("InitProject() error = %v", err)
 	}
 	writeProjectManifest(t, projectDir, manifestFor(remote, "main", []string{"analytics"}))

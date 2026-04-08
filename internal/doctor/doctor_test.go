@@ -22,7 +22,7 @@ func TestCheckProjectHealthyWorkspace(t *testing.T) {
 		"analytics/SKILL.md": "# analytics",
 	})
 
-	if _, err := project.InitProject(projectDir, project.InitProjectOptions{CacheMode: project.CacheModeLocal}); err != nil {
+	if _, err := project.InitProject(context.Background(), projectDir, project.InitProjectOptions{CacheMode: project.CacheModeLocal}); err != nil {
 		t.Fatalf("InitProject() error = %v", err)
 	}
 	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics"}))
@@ -73,7 +73,7 @@ func TestCheckProjectMalformedLocalConfig(t *testing.T) {
 	projectDir := resolvedPath(t, t.TempDir())
 	initGitRepo(t, projectDir)
 
-	if _, err := project.InitProject(projectDir, project.InitProjectOptions{CacheMode: project.CacheModeLocal}); err != nil {
+	if _, err := project.InitProject(context.Background(), projectDir, project.InitProjectOptions{CacheMode: project.CacheModeLocal}); err != nil {
 		t.Fatalf("InitProject() error = %v", err)
 	}
 	mustWriteFile(t, filepath.Join(projectDir, ".agents", "local.yaml"), "cache: [\n")
@@ -100,7 +100,7 @@ func TestCheckProjectWarnsAboutStaleManagedLinks(t *testing.T) {
 		"lint/SKILL.md":      "# lint",
 	})
 
-	if _, err := project.InitProject(projectDir, project.InitProjectOptions{CacheMode: project.CacheModeLocal}); err != nil {
+	if _, err := project.InitProject(context.Background(), projectDir, project.InitProjectOptions{CacheMode: project.CacheModeLocal}); err != nil {
 		t.Fatalf("InitProject() error = %v", err)
 	}
 	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics", "lint"}))
@@ -129,7 +129,7 @@ func TestCheckProjectLocalModeIgnoresBrokenGlobalConfig(t *testing.T) {
 	projectDir := resolvedPath(t, t.TempDir())
 	initGitRepo(t, projectDir)
 
-	if _, err := project.InitProject(projectDir, project.InitProjectOptions{CacheMode: project.CacheModeLocal}); err != nil {
+	if _, err := project.InitProject(context.Background(), projectDir, project.InitProjectOptions{CacheMode: project.CacheModeLocal}); err != nil {
 		t.Fatalf("InitProject() error = %v", err)
 	}
 	configPath, err := config.DefaultConfigPath()
@@ -196,6 +196,30 @@ func TestCheckGlobalMalformedConfigIsError(t *testing.T) {
 		t.Fatal("expected malformed global config to produce errors")
 	}
 	assertFindingCode(t, report.Findings, SectionConfig, "config-parse-failed")
+}
+
+func TestCheckGlobalConfigDirectoryIsInvalid(t *testing.T) {
+	requireGit(t)
+	env := newDoctorTestEnv(t)
+
+	configPath, err := config.DefaultConfigPath()
+	if err != nil {
+		t.Fatalf("DefaultConfigPath() error = %v", err)
+	}
+	if err := os.MkdirAll(configPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", configPath, err)
+	}
+
+	report, err := Check(context.Background(), env.home, ScopeGlobal)
+	if err != nil {
+		t.Fatalf("Check() error = %v", err)
+	}
+
+	if !report.HasErrors() {
+		t.Fatal("expected directory config to produce errors")
+	}
+	assertFindingCode(t, report.Findings, SectionConfig, "config-invalid")
+	assertNoFindingCode(t, report.Findings, SectionConfig, "config-parse-failed")
 }
 
 func TestCheckUnsupportedScopeReturnsError(t *testing.T) {

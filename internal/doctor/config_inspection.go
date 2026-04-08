@@ -54,6 +54,18 @@ func inspectConfig(configPath string, options configInspectionOptions) configIns
 		result.usable = false
 		return result
 	}
+	if info != nil && info.IsDir() {
+		result.findings = append(result.findings, Finding{
+			Section:  SectionConfig,
+			Severity: SeverityError,
+			Code:     "config-invalid",
+			Subject:  configPath,
+			Message:  "config path is a directory, not a file",
+			Path:     configPath,
+		})
+		result.usable = false
+		return result
+	}
 
 	loaded, err := config.Load(configPath)
 	if err != nil {
@@ -80,17 +92,6 @@ func inspectConfig(configPath string, options configInspectionOptions) configIns
 			Message:  options.missingMessage,
 			Path:     configPath,
 		})
-	case info != nil && info.IsDir():
-		result.findings = append(result.findings, Finding{
-			Section:  SectionConfig,
-			Severity: SeverityError,
-			Code:     "config-invalid",
-			Subject:  configPath,
-			Message:  "config path is a directory, not a file",
-			Path:     configPath,
-		})
-		result.usable = false
-		return result
 	}
 
 	result.findings = append(result.findings, inspectStoragePaths(result.cfg, options.includeSharedInstalls)...)

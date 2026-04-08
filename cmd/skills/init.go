@@ -48,7 +48,7 @@ func runProjectInit(cmd *cobra.Command, projectDir string, requestedCacheMode st
 	if err != nil {
 		return err
 	}
-	result, err := project.InitProject(projectDir, project.InitProjectOptions{CacheMode: cacheMode})
+	result, err := project.InitProject(cmd.Context(), projectDir, project.InitProjectOptions{CacheMode: cacheMode})
 	if err != nil {
 		return err
 	}
@@ -148,7 +148,7 @@ func promptProjectCacheMode(cmd *cobra.Command, current project.CacheMode) (proj
 	case "2", "global":
 		return project.CacheModeGlobal, nil
 	default:
-		return "", errors.New("invalid cache choice; use --cache=local or --cache=global")
+		return "", markUsage(errors.New("invalid cache choice; use --cache=local or --cache=global"))
 	}
 }
 
@@ -159,7 +159,7 @@ func normalizeCacheMode(value string) (project.CacheMode, error) {
 	case "global":
 		return project.CacheModeGlobal, nil
 	default:
-		return "", fmt.Errorf("invalid cache mode %q: use local or global", value)
+		return "", markUsage(fmt.Errorf("invalid cache mode %q: use local or global", value))
 	}
 }
 

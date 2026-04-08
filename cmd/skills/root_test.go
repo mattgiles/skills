@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/spf13/pflag"
@@ -1415,7 +1416,7 @@ func TestExitCodeForError(t *testing.T) {
 		{name: "success", err: nil, want: exitCodeSuccess},
 		{name: "doctor", err: errDoctorFoundProblems, want: exitCodeDoctor},
 		{name: "help", err: pflag.ErrHelp, want: exitCodeSuccess},
-		{name: "usage", err: errors.New("unknown flag: --wat"), want: exitCodeUsage},
+		{name: "usage", err: markUsage(errors.New("bad input")), want: exitCodeUsage},
 		{name: "runtime", err: errors.New("boom"), want: exitCodeFailure},
 	}
 
@@ -1435,6 +1436,13 @@ func TestExitCodePolicyForUsageError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected usage error")
 	}
+	if got := exitCodeForError(err); got != exitCodeUsage {
+		t.Fatalf("exitCodeForError() = %d, want %d (err=%v)", got, exitCodeUsage, err)
+	}
+}
+
+func TestExitCodePolicyForMarkedUsageError(t *testing.T) {
+	err := markUsage(errors.New("invalid cache mode"))
 	if got := exitCodeForError(err); got != exitCodeUsage {
 		t.Fatalf("exitCodeForError() = %d, want %d (err=%v)", got, exitCodeUsage, err)
 	}
@@ -1468,6 +1476,82 @@ func TestExitCodePolicyForRuntimeFailure(t *testing.T) {
 	}
 	if got := exitCodeForError(err); got != exitCodeFailure {
 		t.Fatalf("exitCodeForError() = %d, want %d (err=%v)", got, exitCodeFailure, err)
+	}
+}
+
+func TestBinaryExitCodes(t *testing.T) {
+	requireGit(t)
+
+	cases := []struct {
+		name       string
+		setup      func(t *testing.T, env testEnv) string
+		args       []string
+		wantCode   int
+		wantStderr string
+	}{
+		{
+			name: "help",
+			setup: func(t *testing.T, env testEnv) string {
+				return ""
+			},
+			args:     []string{"--help"},
+			wantCode: exitCodeSuccess,
+		},
+		{
+			name: "unknown flag",
+			setup: func(t *testing.T, env testEnv) string {
+				return ""
+			},
+			args:       []string{"status", "--unknown-flag"},
+			wantCode:   exitCodeUsage,
+			wantStderr: "unknown flag",
+		},
+		{
+			name: "invalid cache mode",
+			setup: func(t *testing.T, env testEnv) string {
+				projectDir := t.TempDir()
+				initGitRepo(t, projectDir)
+				return projectDir
+			},
+			args:       []string{"init", "--cache=wat"},
+			wantCode:   exitCodeUsage,
+			wantStderr: "invalid cache mode",
+		},
+		{
+			name: "doctor problems",
+			setup: func(t *testing.T, env testEnv) string {
+				configPath := filepath.Join(env.configHome, "skills", "config.yaml")
+				mustWriteFile(t, configPath, "sources: [\n")
+				return ""
+			},
+			args:       []string{"doctor", "--global"},
+			wantCode:   exitCodeDoctor,
+			wantStderr: "doctor found problems",
+		},
+		{
+			name: "runtime failure",
+			setup: func(t *testing.T, env testEnv) string {
+				return t.TempDir()
+			},
+			args:       []string{"status"},
+			wantCode:   exitCodeFailure,
+			wantStderr: "outside a Git repo",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			bin := buildTestBinary(t)
+			dir := tc.setup(t, env)
+			stdout, stderr, code := runBuiltBinary(t, bin, env, dir, tc.args...)
+			if code != tc.wantCode {
+				t.Fatalf("exit code = %d, want %d\nstdout:\n%s\nstderr:\n%s", code, tc.wantCode, stdout, stderr)
+			}
+			if tc.wantStderr != "" && !strings.Contains(stderr, tc.wantStderr) {
+				t.Fatalf("stderr = %q, want substring %q", stderr, tc.wantStderr)
+			}
+		})
 	}
 }
 
@@ -1533,6 +1617,59 @@ func executeCommandInDirWithContext(t *testing.T, env testEnv, dir string, ctx c
 
 	err = cmd.ExecuteContext(ctx)
 	return stdout.String(), stderr.String(), err
+}
+
+func buildTestBinary(t *testing.T) string {
+	t.Helper()
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+
+	bin := filepath.Join(t.TempDir(), "skills-test-bin")
+	cmd := exec.Command("go", "build", "-o", bin, ".")
+	cmd.Dir = wd
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("go build failed: %v\n%s", err, string(output))
+	}
+	return bin
+}
+
+func runBuiltBinary(t *testing.T, bin string, env testEnv, dir string, args ...string) (string, string, int) {
+	t.Helper()
+
+	cmd := exec.Command(bin, args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	cmd.Env = append(os.Environ(),
+		"HOME="+env.home,
+		"SKILLS_CONFIG_HOME="+env.configHome,
+		"SKILLS_DATA_HOME="+env.dataHome,
+	)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err == nil {
+		return stdout.String(), stderr.String(), exitCodeSuccess
+	}
+
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("run binary error = %v", err)
+	}
+
+	status, ok := exitErr.Sys().(syscall.WaitStatus)
+	if !ok {
+		t.Fatalf("unexpected exit status type %T", exitErr.Sys())
+	}
+	return stdout.String(), stderr.String(), status.ExitStatus()
 }
 
 func requireGit(t *testing.T) {

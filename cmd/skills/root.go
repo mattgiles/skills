@@ -9,6 +9,9 @@ func newRootCommand() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return markUsage(err)
+	})
 
 	cmd.PersistentFlags().Bool("verbose", false, "Show detailed diagnostic output")
 

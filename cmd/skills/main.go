@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/spf13/pflag"
@@ -39,6 +38,25 @@ const (
 	exitCodeDoctor  = 3
 )
 
+type usageError struct {
+	err error
+}
+
+func (e usageError) Error() string {
+	return e.err.Error()
+}
+
+func (e usageError) Unwrap() error {
+	return e.err
+}
+
+func markUsage(err error) error {
+	if err == nil {
+		return nil
+	}
+	return usageError{err: err}
+}
+
 func exitCodeForError(err error) int {
 	if err == nil {
 		return exitCodeSuccess
@@ -49,33 +67,9 @@ func exitCodeForError(err error) int {
 	if errors.Is(err, flag.ErrHelp) || errors.Is(err, pflag.ErrHelp) {
 		return exitCodeSuccess
 	}
-	if isUsageError(err) {
+	var usage usageError
+	if errors.As(err, &usage) {
 		return exitCodeUsage
 	}
 	return exitCodeFailure
-}
-
-func isUsageError(err error) bool {
-	message := strings.TrimSpace(err.Error())
-	for _, prefix := range []string{
-		"unknown flag: ",
-		"unknown shorthand flag: ",
-		"flag needs an argument: ",
-		"bad flag syntax: ",
-		"unknown command ",
-		"accepts ",
-		"requires at least ",
-		"requires at most ",
-		"requires between ",
-		"requires ",
-		"invalid argument ",
-		"arguments accepted",
-		"subcommand is required",
-	} {
-		if strings.HasPrefix(message, prefix) {
-			return true
-		}
-	}
-
-	return false
 }
