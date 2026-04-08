@@ -1,129 +1,48 @@
 set shell := ["zsh", "-lc"]
 
+[private]
 default:
-  @just --list
+    @just --list
 
+# Format Go source files in cmd/ and internal/.
 fmt:
-  find cmd internal -type f -name '*.go' -print0 | xargs -0 gofmt -w
+    find cmd internal -type f -name '*.go' -print0 | xargs -0 gofmt -w
 
+# Check whether Go source files are already formatted.
 fmt-check:
-  test -z "$(find cmd internal -type f -name '*.go' -print0 | xargs -0 gofmt -l)"
+    test -z "$(find cmd internal -type f -name '*.go' -print0 | xargs -0 gofmt -l)"
 
+# Run go mod tidy.
 tidy:
-  go mod tidy
+    go mod tidy
 
+# Run the full Go test suite.
 test:
-  go test ./...
+    go test ./...
 
+# Update local markdown snapshots for CLI output tests.
 snapshot:
-  go test ./cmd/skills -run TestMarkdownSnapshots
+    go test ./cmd/skills -run TestMarkdownSnapshots
 
+# Run live markdown snapshot tests against real repositories.
 snapshot-live:
-  RUN_LIVE_SNAPSHOT_TESTS=1 go test ./cmd/skills -run TestMarkdownSnapshots
+    RUN_LIVE_SNAPSHOT_TESTS=1 go test ./cmd/skills -run TestMarkdownSnapshots
 
+# Run formatting and tests.
 check: fmt-check test
 
+# Build the skills CLI.
 build:
-  go build ./cmd/skills
+    go build ./cmd/skills
 
+# Create and push the next release tag; default bump is minor.
+release bump='minor':
+    {{ justfile_directory() }}/scripts/release.sh {{ bump }}
+
+# Build and install the current HEAD binary.
 install-head:
-  #!/bin/sh
-  set -eu
-  BINARY="skills"
-  INSTALL_DIR="${INSTALL_DIR:-}"
-  INSTALL_PATH="${INSTALL_PATH:-}"
+    {{ justfile_directory() }}/scripts/install-head.sh
 
-  path_contains() {
-    target="$1"
-    old_ifs="${IFS:- }"
-    IFS=:
-    for entry in $PATH; do
-      if [ "$entry" = "$target" ]; then
-        IFS="$old_ifs"
-        return 0
-      fi
-    done
-    IFS="$old_ifs"
-    return 1
-  }
-
-  dir_writable_or_creatable() {
-    dir="$1"
-    if [ -d "$dir" ]; then
-      [ -w "$dir" ]
-      return
-    fi
-
-    parent="$(dirname "$dir")"
-    while [ ! -d "$parent" ]; do
-      next_parent="$(dirname "$parent")"
-      [ "$next_parent" != "$parent" ] || return 1
-      parent="$next_parent"
-    done
-
-    [ -w "$parent" ]
-  }
-
-  choose_install_dir() {
-    if [ -n "$INSTALL_DIR" ]; then
-      printf '%s\n' "$INSTALL_DIR"
-      return
-    fi
-
-    for dir in /opt/homebrew/bin /usr/local/bin; do
-      if path_contains "$dir" && dir_writable_or_creatable "$dir"; then
-        printf '%s\n' "$dir"
-        return
-      fi
-    done
-
-    old_ifs="${IFS:- }"
-    IFS=:
-    for dir in $PATH; do
-      [ -n "$dir" ] || continue
-      if dir_writable_or_creatable "$dir"; then
-        IFS="$old_ifs"
-        printf '%s\n' "$dir"
-        return
-      fi
-    done
-    IFS="$old_ifs"
-
-    for dir in "$HOME/.local/bin" "$HOME/bin"; do
-      if dir_writable_or_creatable "$dir"; then
-        printf '%s\n' "$dir"
-        return
-      fi
-    done
-
-    printf '%s\n' "error: could not find a writable install directory" >&2
-    exit 1
-  }
-
-  if [ -n "$INSTALL_PATH" ]; then
-    target="$INSTALL_PATH"
-  elif command -v "$BINARY" >/dev/null 2>&1; then
-    target="$(command -v "$BINARY")"
-  else
-    install_dir="$(choose_install_dir)"
-    target="$install_dir/$BINARY"
-  fi
-
-  tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' EXIT INT TERM
-  bin_path="$tmpdir/$BINARY"
-
-  go build -o "$bin_path" ./cmd/skills
-  mkdir -p "$(dirname "$target")"
-  if command -v install >/dev/null 2>&1; then
-    install -m 0755 "$bin_path" "$target"
-  else
-    cp "$bin_path" "$target"
-    chmod 0755 "$target"
-  fi
-
-  printf '%s\n' "installed HEAD to $target"
-  "$target" version
-
+# Run the CLI from source with arbitrary arguments.
 run *args:
-  go run ./cmd/skills {{args}}
+    go run ./cmd/skills {{ args }}

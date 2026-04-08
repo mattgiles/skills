@@ -19,16 +19,53 @@ git pull
 
 Make sure `HEAD` is the exact commit you want to release.
 
-## 2. Create And Push A Version Tag
+## 2. Run The Release Recipe
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+just release
 ```
 
-The release workflow only triggers on tag pushes matching `v*`.
+By default, `just release` creates the next minor version tag and pushes only that tag to `origin`.
 
-## 3. Wait For The Release Workflow
+Examples:
+
+- `v0.1.3` becomes `v0.2.0`
+- if no release tags exist yet, the first minor release becomes `v0.1.0`
+
+For a major bump:
+
+```bash
+just release major
+```
+
+Examples:
+
+- `v0.1.3` becomes `v1.0.0`
+- if no release tags exist yet, the first major release becomes `v1.0.0`
+
+The release workflow only triggers on pushed tags matching `v*`.
+
+## 3. Understand The Safety Checks
+
+`just release` refuses to continue unless all of these are true:
+
+- the current branch is `main`
+- the upstream branch is `origin/main`
+- the worktree is clean
+- local `HEAD` matches `origin/main`
+- the computed release tag does not already exist
+
+The recipe fetches `origin/main` and tags before it computes the next version.
+
+It creates an annotated tag using the tag name as the annotation message, then runs:
+
+```bash
+git push origin <tag>
+```
+
+If the push fails after tag creation, the tag remains present locally and is not deleted automatically.
+
+## 4. Wait For The Release Workflow
 
 GitHub Actions runs the release workflow in `.github/workflows/release.yml`.
 
@@ -40,7 +77,7 @@ That workflow uses GoReleaser and `.goreleaser.yaml` to:
 - create the GitHub Release
 - upload the artifacts
 
-## 4. Verify The GitHub Release
+## 5. Verify The GitHub Release
 
 After the workflow finishes, verify the release contains:
 
@@ -48,7 +85,7 @@ After the workflow finishes, verify the release contains:
 - `skills_<version>_darwin_arm64.tar.gz`
 - `skills_checksums.txt`
 
-## 5. Verify The Public Installer
+## 6. Verify The Public Installer
 
 Install the new version directly from the public installer:
 
@@ -67,3 +104,4 @@ skills version
 - pushing a feature branch does not create a release
 - merging to `main` does not create a release
 - pushing a `v...` tag is what publishes a release
+- `just release` pushes the tag only; it does not push `main`
