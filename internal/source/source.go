@@ -13,6 +13,7 @@ import (
 
 type Source struct {
 	Alias    string
+	Ref      string
 	URL      string
 	RepoPath string
 }

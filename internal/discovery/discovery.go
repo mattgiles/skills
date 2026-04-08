@@ -1,10 +1,13 @@
 package discovery
 
 import (
+	"context"
 	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/mattgiles/skills/internal/source"
 )
 
 type DiscoveredSkill struct {
@@ -38,6 +41,14 @@ func Discover(sourceAlias string, repoPath string) ([]DiscoveredSkill, error) {
 	}
 
 	return DiscoverFromPaths(sourceAlias, repoPath, paths), nil
+}
+
+func DiscoverAtCommit(ctx context.Context, src source.Source, rootPath string, commit string) ([]DiscoveredSkill, error) {
+	paths, err := source.ListFilesAtCommit(ctx, src, commit)
+	if err != nil {
+		return nil, err
+	}
+	return DiscoverFromPaths(src.Alias, rootPath, paths), nil
 }
 
 func DiscoverFromPaths(sourceAlias string, repoPath string, paths []string) []DiscoveredSkill {

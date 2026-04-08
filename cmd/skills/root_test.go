@@ -93,6 +93,23 @@ func TestSourceSyncClonesAndSkillListAggregatesInGlobalScope(t *testing.T) {
 	assertOutputHasFields(t, stdout, "repo-one", "analytics", "analytics")
 	assertOutputHasFields(t, stdout, "repo-one", "core", filepath.Join("dbt", "core"))
 	assertOutputHasFields(t, stdout, "repo-two", "lint", "lint")
+
+	mustWriteFile(t, filepath.Join(remoteOne, "ops", "SKILL.md"), "# ops")
+	runGit(t, remoteOne, "add", ".")
+	runGit(t, remoteOne, "commit", "-m", "add ops")
+
+	if _, stderr, err := executeCommand(t, env, "source", "sync", "--global", "repo-one"); err != nil {
+		t.Fatalf("sync repo-one error = %v, stderr = %s", err, stderr)
+	}
+
+	stdout, stderr, err = executeCommand(t, env, "skill", "list", "--global", "--source", "repo-one")
+	if err != nil {
+		t.Fatalf("skill list after fetch error = %v, stderr = %s", err, stderr)
+	}
+
+	assertOutputHasFields(t, stdout, "repo-one", "analytics", "analytics")
+	assertOutputHasFields(t, stdout, "repo-one", "core", filepath.Join("dbt", "core"))
+	assertOutputHasFields(t, stdout, "repo-one", "ops", "ops")
 }
 
 func TestSkillListSkipsUnsyncedSource(t *testing.T) {
@@ -1313,6 +1330,82 @@ func TestProjectUpdateAndDryRunFlow(t *testing.T) {
 	}
 	if !strings.Contains(target, commitTwo) {
 		t.Fatalf("sync should update canonical link target to %s, got %q", commitTwo, target)
+	}
+}
+
+func TestProjectSyncUpdateAdoptsNewSkillInOneStep(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	resolvedProjectDir := resolvedPath(t, projectDir)
+	initGitRepo(t, projectDir)
+
+	remote := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+	commitOne := gitOutput(t, remote, "rev-parse", "HEAD")
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
+		t.Fatalf("project init error = %v, stderr = %s", err, stderr)
+	}
+	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics"}))
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "sync"); err != nil {
+		t.Fatalf("initial project sync error = %v, stderr = %s", err, stderr)
+	}
+
+	mustWriteFile(t, filepath.Join(remote, "lint", "SKILL.md"), "# lint")
+	runGit(t, remote, "add", ".")
+	runGit(t, remote, "commit", "-m", "add lint")
+	commitTwo := gitOutput(t, remote, "rev-parse", "HEAD")
+
+	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics", "lint"}))
+
+	_, stderr, err := executeCommandInDir(t, env, projectDir, "sync")
+	if err == nil {
+		t.Fatalf("expected sync error, stderr = %s", stderr)
+	}
+	if !strings.Contains(err.Error(), "repo-one/lint: missing-skill") {
+		t.Fatalf("unexpected sync error: %v", err)
+	}
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "sync", "--update", "--dry-run")
+	if err != nil {
+		t.Fatalf("project sync --update --dry-run error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "dry-run") {
+		t.Fatalf("stdout missing dry-run marker:\n%s", stdout)
+	}
+	assertOutputHasFields(t, stdout, "repo-one", "updated", "main", commitTwo[:12])
+	assertOutputHasFields(t, stdout, "repo-one", "analytics", "would-update", filepath.Join(resolvedProjectDir, ".agents", "skills", "analytics"))
+	assertOutputHasFields(t, stdout, "repo-one", "lint", "would-create", filepath.Join(resolvedProjectDir, ".agents", "skills", "lint"))
+
+	statusOut, statusErr, err := executeCommandInDir(t, env, projectDir, "status")
+	if err != nil {
+		t.Fatalf("project status after dry-run error = %v, stderr = %s", err, statusErr)
+	}
+	assertOutputHasFields(t, statusOut, "repo-one", "update-available", "main", commitTwo[:12])
+	assertOutputHasFields(t, statusOut, "repo-one", "analytics", "linked", filepath.Join(resolvedProjectDir, ".agents", "skills", "analytics"))
+	assertOutputHasFields(t, statusOut, "repo-one", "lint", "missing-skill", filepath.Join(resolvedProjectDir, ".agents", "skills", "lint"))
+
+	stdout, stderr, err = executeCommandInDir(t, env, projectDir, "sync", "--update")
+	if err != nil {
+		t.Fatalf("project sync --update error = %v, stderr = %s", err, stderr)
+	}
+	assertOutputHasFields(t, stdout, "repo-one", "updated", "main", commitTwo[:12])
+	assertOutputHasFields(t, stdout, "repo-one", "analytics", "updated", filepath.Join(resolvedProjectDir, ".agents", "skills", "analytics"))
+	assertOutputHasFields(t, stdout, "repo-one", "lint", "created", filepath.Join(resolvedProjectDir, ".agents", "skills", "lint"))
+
+	statusOut, statusErr, err = executeCommandInDir(t, env, projectDir, "status")
+	if err != nil {
+		t.Fatalf("project status error = %v, stderr = %s", err, statusErr)
+	}
+	assertOutputHasFields(t, statusOut, "repo-one", "up-to-date", "main", commitTwo[:12])
+	assertOutputHasFields(t, statusOut, "repo-one", "analytics", "linked", filepath.Join(resolvedProjectDir, ".agents", "skills", "analytics"))
+	assertOutputHasFields(t, statusOut, "repo-one", "lint", "linked", filepath.Join(resolvedProjectDir, ".agents", "skills", "lint"))
+
+	if commitOne == commitTwo {
+		t.Fatal("expected distinct commits after adding lint")
 	}
 }
 

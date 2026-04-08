@@ -111,6 +111,7 @@ type UpdateResult struct {
 
 type SyncOptions struct {
 	DryRun bool
+	Update bool
 }
 
 type UpdateOptions struct {

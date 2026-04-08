@@ -105,6 +105,7 @@ func selectManifestSources(manifest project.Manifest, repoRoot string, aliases [
 
 		selected = append(selected, source.Source{
 			Alias:    alias,
+			Ref:      entry.Ref,
 			URL:      entry.URL,
 			RepoPath: source.RepoPath(repoRoot, alias),
 		})

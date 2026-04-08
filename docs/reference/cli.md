@@ -197,7 +197,7 @@ Flags:
 
 Lists discovered skills from synced source repos.
 
-By default it uses the current repo manifest sources. Use `--global` to inspect the shared home manifest instead.
+By default it uses the current repo manifest sources. Use `--global` to inspect the shared home manifest instead. Discovery resolves each source's manifest ref against the fetched canonical repo state, so newly fetched upstream skills appear even if the local checkout `HEAD` has not moved.
 
 Flags:
 
@@ -235,6 +235,7 @@ Flags:
 | --- | --- |
 | `--global` | Sync shared home/global installs instead of the current repo |
 | `--dry-run` | Preview sync actions without changing state or links |
+| `--update` | Advance stored source commits before syncing links |
 
 Repo mode syncs:
 
@@ -248,6 +249,8 @@ Global mode syncs:
 
 - `~/.agents/skills`
 - `~/.claude/skills`
+
+By default `skills sync` preserves the currently stored resolved commit for each source. Use `skills sync --update` when you want sync to both advance source state and update installed links in one step.
 
 ## `skills update [source...]`
 

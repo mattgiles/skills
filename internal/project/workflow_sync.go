@@ -44,15 +44,15 @@ func syncWorkspace(ctx context.Context, ws workspace, options SyncOptions) (Sync
 	if err != nil {
 		return SyncResult{}, err
 	}
-	return runSyncWorkspace(ctx, ws, manifest, state, resolvedSources, options.DryRun)
+	return runSyncWorkspace(ctx, ws, manifest, state, resolvedSources, options.DryRun, options.Update)
 }
 
 func syncWorkspaceWithState(ctx context.Context, ws workspace, manifest Manifest, state State, resolvedSources map[string]*resolvedSource, dryRun bool) (SyncResult, error) {
-	return runSyncWorkspace(ctx, ws, manifest, state, resolvedSources, dryRun)
+	return runSyncWorkspace(ctx, ws, manifest, state, resolvedSources, dryRun, false)
 }
 
-func runSyncWorkspace(ctx context.Context, ws workspace, manifest Manifest, state State, resolvedSources map[string]*resolvedSource, dryRun bool) (SyncResult, error) {
-	prepared, err := prepareSyncWorkspace(ctx, ws, manifest, state, resolvedSources, dryRun)
+func runSyncWorkspace(ctx context.Context, ws workspace, manifest Manifest, state State, resolvedSources map[string]*resolvedSource, dryRun bool, update bool) (SyncResult, error) {
+	prepared, err := prepareSyncWorkspace(ctx, ws, manifest, state, resolvedSources, dryRun, update)
 	if err != nil {
 		return SyncResult{}, err
 	}
@@ -65,12 +65,12 @@ func runSyncWorkspace(ctx context.Context, ws workspace, manifest Manifest, stat
 	return buildSyncResult(prepared, false), nil
 }
 
-func prepareSyncWorkspace(ctx context.Context, ws workspace, manifest Manifest, state State, resolvedSources map[string]*resolvedSource, dryRun bool) (preparedSync, error) {
+func prepareSyncWorkspace(ctx context.Context, ws workspace, manifest Manifest, state State, resolvedSources map[string]*resolvedSource, dryRun bool, update bool) (preparedSync, error) {
 	stateSources := sourceStateMap(state)
 	skillStateLinks := managedLinkMap(state.SkillLinks)
 	claudeStateLinks := managedLinkMap(state.ClaudeLinks)
 
-	sourceReports, sourceStates, err := resolveSourcesForSync(ctx, resolvedSources, stateSources)
+	sourceReports, sourceStates, err := resolveSourcesForSync(ctx, resolvedSources, stateSources, update)
 	if err != nil {
 		return preparedSync{}, err
 	}

@@ -143,7 +143,7 @@ func resolveSourcesForStatus(ctx context.Context, resolvedSources map[string]*re
 	return reports, nil
 }
 
-func resolveSourcesForSync(ctx context.Context, resolvedSources map[string]*resolvedSource, stateSources map[string]SourceState) ([]SourceReport, []SourceState, error) {
+func resolveSourcesForSync(ctx context.Context, resolvedSources map[string]*resolvedSource, stateSources map[string]SourceState, resolveLatest bool) ([]SourceReport, []SourceState, error) {
 	reports := make([]SourceReport, 0, len(resolvedSources))
 	nextStates := make([]SourceState, 0, len(resolvedSources))
 
@@ -171,31 +171,7 @@ func resolveSourcesForSync(ctx context.Context, resolvedSources map[string]*reso
 			report.Status = "invalid-source"
 			report.Message = status.LastError
 		default:
-			useStored := hasPrev && prev.Ref == src.Ref && strings.TrimSpace(prev.ResolvedCommit) != ""
-			if useStored {
-				src.DesiredCommit = prev.ResolvedCommit
-				report.Commit = shortCommit(prev.ResolvedCommit)
-				report.Status = "up-to-date"
-			} else {
-				commit, err := source.ResolveCommit(ctx, source.Source{
-					Alias:    src.Alias,
-					URL:      src.URL,
-					RepoPath: src.RepoPath,
-				}, src.Ref)
-				if err != nil {
-					report.Status = "invalid-ref"
-					report.Message = err.Error()
-				} else {
-					src.CurrentCommit = commit
-					src.DesiredCommit = commit
-					report.Commit = shortCommit(commit)
-					report.Status = "not-synced"
-					if hasPrev && prev.Ref == src.Ref && prev.ResolvedCommit != commit && prev.ResolvedCommit != "" {
-						report.Status = "update-available"
-						report.Message = "stored " + shortCommit(prev.ResolvedCommit)
-					}
-				}
-			}
+			resolveSyncSource(ctx, src, prev, hasPrev, resolveLatest, &report)
 		}
 
 		if status.Exists && status.IsGitRepo && strings.TrimSpace(src.DesiredCommit) != "" {
@@ -253,34 +229,12 @@ func resolveSourcesForUpdate(ctx context.Context, resolvedSources map[string]*re
 			report.Status = "invalid-source"
 			report.Message = status.LastError
 		default:
-			commit, err := source.ResolveCommit(ctx, source.Source{
-				Alias:    src.Alias,
-				URL:      src.URL,
-				RepoPath: src.RepoPath,
-			}, src.Ref)
-			if err != nil {
-				report.Status = "invalid-ref"
-				report.Message = err.Error()
-			} else {
-				src.CurrentCommit = commit
-				report.Commit = shortCommit(commit)
-				report.WorktreePath = source.WorktreePath(src.WorktreeRoot, src.WorkspaceID, src.Alias, commit)
-				switch {
-				case !hasPrev || strings.TrimSpace(prev.ResolvedCommit) == "":
-					report.Status = "resolved"
-				case prev.Ref != src.Ref || prev.ResolvedCommit != commit:
-					report.Status = "updated"
-					if prev.ResolvedCommit != "" {
-						report.Message = shortCommit(prev.ResolvedCommit) + " -> " + shortCommit(commit)
-					}
-				default:
-					report.Status = "up-to-date"
-				}
-
+			resolveSyncSource(ctx, src, prev, hasPrev, true, &report)
+			if strings.TrimSpace(src.DesiredCommit) != "" {
 				nextStates = append(nextStates, SourceState{
 					Source:         src.Alias,
 					Ref:            src.Ref,
-					ResolvedCommit: commit,
+					ResolvedCommit: src.DesiredCommit,
 				})
 			}
 		}
@@ -353,19 +307,76 @@ func loadSkillsForCommit(ctx context.Context, src *resolvedSource) (map[string][
 		return skillsByName, nil
 	}
 
-	paths, err := source.ListFilesAtCommit(ctx, source.Source{
+	discovered, err := discovery.DiscoverAtCommit(ctx, source.Source{
 		Alias:    src.Alias,
 		URL:      src.URL,
 		RepoPath: src.RepoPath,
-	}, src.DesiredCommit)
+	}, src.WorktreePath, src.DesiredCommit)
 	if err != nil {
 		return nil, fmt.Errorf("inspect %s at %s: %w", src.Alias, shortCommit(src.DesiredCommit), err)
 	}
 
-	for _, skill := range discovery.DiscoverFromPaths(src.Alias, src.WorktreePath, paths) {
+	for _, skill := range discovered {
 		skillsByName[skill.Name] = append(skillsByName[skill.Name], skill)
 	}
 	return skillsByName, nil
+}
+
+func resolveSyncSource(ctx context.Context, src *resolvedSource, prev SourceState, hasPrev bool, resolveLatest bool, report *SourceReport) {
+	srcDef := source.Source{
+		Alias:    src.Alias,
+		URL:      src.URL,
+		RepoPath: src.RepoPath,
+	}
+
+	if resolveLatest {
+		commit, err := source.ResolveCommit(ctx, srcDef, src.Ref)
+		if err != nil {
+			report.Status = "invalid-ref"
+			report.Message = err.Error()
+			return
+		}
+
+		src.CurrentCommit = commit
+		src.DesiredCommit = commit
+		report.Commit = shortCommit(commit)
+		switch {
+		case !hasPrev || strings.TrimSpace(prev.ResolvedCommit) == "":
+			report.Status = "resolved"
+		case prev.Ref != src.Ref || prev.ResolvedCommit != commit:
+			report.Status = "updated"
+			if prev.ResolvedCommit != "" {
+				report.Message = shortCommit(prev.ResolvedCommit) + " -> " + shortCommit(commit)
+			}
+		default:
+			report.Status = "up-to-date"
+		}
+		return
+	}
+
+	useStored := hasPrev && prev.Ref == src.Ref && strings.TrimSpace(prev.ResolvedCommit) != ""
+	if useStored {
+		src.DesiredCommit = prev.ResolvedCommit
+		report.Commit = shortCommit(prev.ResolvedCommit)
+		report.Status = "up-to-date"
+		return
+	}
+
+	commit, err := source.ResolveCommit(ctx, srcDef, src.Ref)
+	if err != nil {
+		report.Status = "invalid-ref"
+		report.Message = err.Error()
+		return
+	}
+
+	src.CurrentCommit = commit
+	src.DesiredCommit = commit
+	report.Commit = shortCommit(commit)
+	report.Status = "not-synced"
+	if hasPrev && prev.Ref == src.Ref && prev.ResolvedCommit != commit && prev.ResolvedCommit != "" {
+		report.Status = "update-available"
+		report.Message = "stored " + shortCommit(prev.ResolvedCommit)
+	}
 }
 
 func selectResolvedSources(all map[string]*resolvedSource, aliases []string) (map[string]*resolvedSource, error) {

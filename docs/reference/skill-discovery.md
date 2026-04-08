@@ -17,7 +17,7 @@ The discovered record also includes the relative path within the repo.
 
 There are two discovery modes in the current implementation:
 
-- `skills skill list` scans the checked-out canonical source repo for the active scope:
+- `skills skill list` inspects the fetched manifest ref for each canonical source repo in the active scope:
   - repo mode uses sources from `.agents/manifest.yaml`
   - `--global` uses sources from `~/.agents/manifest.yaml`
 - project workflows inspect the file list for the resolved commit and map the discovered relative paths into the project's worktree

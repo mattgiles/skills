@@ -12,6 +12,8 @@ skills skill list
 
 This scans the synced repos for sources declared in `.agents/manifest.yaml` and lists directories that contain `SKILL.md`.
 
+It resolves each source's manifest ref from the fetched canonical repo state, so a fresh `skills source sync` is enough to surface newly added upstream skills.
+
 ## Filter By Source
 
 ```bash

@@ -30,6 +30,7 @@ func newStatusCommand() *cobra.Command {
 func newSyncCommand() *cobra.Command {
 	var global bool
 	var dryRun bool
+	var update bool
 
 	cmd := &cobra.Command{
 		Use:   "sync",
@@ -43,12 +44,16 @@ func newSyncCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runSyncCommand(cmd, target, project.SyncOptions{DryRun: dryRun})
+			return runSyncCommand(cmd, target, project.SyncOptions{
+				DryRun: dryRun,
+				Update: update,
+			})
 		},
 	}
 
 	cmd.Flags().BoolVar(&global, "global", false, "Operate on shared home/global installs")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview sync actions without changing state or links")
+	cmd.Flags().BoolVar(&update, "update", false, "Advance stored source commits before syncing links")
 	return cmd
 }
 

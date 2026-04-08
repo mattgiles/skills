@@ -284,6 +284,118 @@ func TestProjectUpdateWithoutSyncLeavesStaleLinks(t *testing.T) {
 	assertLinkStatus(t, report.ClaudeLinks, "repo-one", "analytics", "linked")
 }
 
+func TestProjectSyncWithoutUpdateKeepsStoredCommit(t *testing.T) {
+	requireGit(t)
+	_ = newProjectTestEnv(t)
+	projectDir := resolvedPath(t, t.TempDir())
+	initGitRepo(t, projectDir)
+
+	remote := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+
+	if _, err := InitProject(context.Background(), projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
+		t.Fatalf("InitProject() error = %v", err)
+	}
+	writeProjectManifest(t, projectDir, manifestFor(remote, "main", []string{"analytics"}))
+
+	if _, err := Sync(context.Background(), projectDir, SyncOptions{}); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+
+	mustWriteFile(t, filepath.Join(remote, "lint", "SKILL.md"), "# lint")
+	runGit(t, remote, "add", ".")
+	runGit(t, remote, "commit", "-m", "add lint")
+
+	writeProjectManifest(t, projectDir, manifestFor(remote, "main", []string{"analytics", "lint"}))
+
+	_, err := Sync(context.Background(), projectDir, SyncOptions{})
+	if err == nil {
+		t.Fatal("Sync() expected missing-skill error without update")
+	}
+	if !strings.Contains(err.Error(), "repo-one/lint: missing-skill") {
+		t.Fatalf("Sync() error = %v", err)
+	}
+}
+
+func TestProjectSyncWithUpdateAdvancesStateAndInstallsNewSkill(t *testing.T) {
+	requireGit(t)
+	_ = newProjectTestEnv(t)
+	projectDir := resolvedPath(t, t.TempDir())
+	initGitRepo(t, projectDir)
+
+	remote := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+
+	if _, err := InitProject(context.Background(), projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
+		t.Fatalf("InitProject() error = %v", err)
+	}
+	writeProjectManifest(t, projectDir, manifestFor(remote, "main", []string{"analytics"}))
+
+	if _, err := Sync(context.Background(), projectDir, SyncOptions{}); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+
+	stateBefore, err := os.ReadFile(StatePath(projectDir))
+	if err != nil {
+		t.Fatalf("ReadFile(state) error = %v", err)
+	}
+
+	mustWriteFile(t, filepath.Join(remote, "lint", "SKILL.md"), "# lint")
+	runGit(t, remote, "add", ".")
+	runGit(t, remote, "commit", "-m", "add lint")
+	commitTwo := gitOutput(t, remote, "rev-parse", "HEAD")
+
+	writeProjectManifest(t, projectDir, manifestFor(remote, "main", []string{"analytics", "lint"}))
+
+	result, err := Sync(context.Background(), projectDir, SyncOptions{
+		DryRun: true,
+		Update: true,
+	})
+	if err != nil {
+		t.Fatalf("Sync() dry-run error = %v", err)
+	}
+	if !result.DryRun {
+		t.Fatal("Sync() result should be dry-run")
+	}
+	assertSourceStatus(t, result.Sources, "repo-one", "updated")
+	assertLinkStatus(t, result.SkillLinks, "repo-one", "analytics", "would-update")
+	assertLinkStatus(t, result.SkillLinks, "repo-one", "lint", "would-create")
+
+	stateAfterDryRun, err := os.ReadFile(StatePath(projectDir))
+	if err != nil {
+		t.Fatalf("ReadFile(state) error = %v", err)
+	}
+	if string(stateAfterDryRun) != string(stateBefore) {
+		t.Fatalf("state changed during dry-run\nbefore:\n%s\nafter:\n%s", string(stateBefore), string(stateAfterDryRun))
+	}
+
+	result, err = Sync(context.Background(), projectDir, SyncOptions{Update: true})
+	if err != nil {
+		t.Fatalf("Sync() with update error = %v", err)
+	}
+	assertSourceStatus(t, result.Sources, "repo-one", "updated")
+	assertLinkStatus(t, result.SkillLinks, "repo-one", "analytics", "updated")
+	assertLinkStatus(t, result.SkillLinks, "repo-one", "lint", "created")
+
+	state, err := LoadState(projectDir)
+	if err != nil {
+		t.Fatalf("LoadState() error = %v", err)
+	}
+	if len(state.Sources) != 1 || state.Sources[0].ResolvedCommit != commitTwo {
+		t.Fatalf("unexpected state sources: %+v", state.Sources)
+	}
+
+	report, err := Status(context.Background(), projectDir)
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+	assertSourceStatus(t, report.Sources, "repo-one", "up-to-date")
+	assertLinkStatus(t, report.SkillLinks, "repo-one", "analytics", "linked")
+	assertLinkStatus(t, report.SkillLinks, "repo-one", "lint", "linked")
+}
+
 func TestInitProjectPropagatesContext(t *testing.T) {
 	requireGit(t)
 	_ = newProjectTestEnv(t)
@@ -493,6 +605,18 @@ func runGit(t *testing.T, dir string, args ...string) {
 	if err != nil {
 		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(output))
 	}
+}
+
+func gitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(output))
+	}
+	return strings.TrimSpace(string(output))
 }
 
 func mustWriteFile(t *testing.T, path string, contents string) {

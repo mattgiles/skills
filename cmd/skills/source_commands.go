@@ -244,9 +244,14 @@ func newSkillCommand() *cobra.Command {
 					continue
 				}
 
-				discovered, err := discovery.Discover(src.Alias, src.RepoPath)
+				commit, err := source.ResolveCommit(cmd.Context(), src, src.Ref)
 				if err != nil {
-					return fmt.Errorf("discover skills in %s: %w", src.Alias, err)
+					return fmt.Errorf("resolve %s: %w", src.Alias, err)
+				}
+
+				discovered, err := discovery.DiscoverAtCommit(cmd.Context(), src, src.RepoPath, commit)
+				if err != nil {
+					return fmt.Errorf("discover skills in %s at %s: %w", src.Alias, commit[:12], err)
 				}
 				skills = append(skills, discovered...)
 			}
