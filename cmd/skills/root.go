@@ -25,6 +25,7 @@ func newRootCommand() *cobra.Command {
 	cmd.AddCommand(newSyncCommand())
 	cmd.AddCommand(newUpdateCommand())
 	cmd.AddCommand(newConfigCommand())
+	cmd.AddCommand(newCacheCommand())
 	cmd.AddCommand(newDoctorCommand())
 	cmd.AddCommand(newSelfCommand())
 	cmd.AddCommand(newSourceCommand())

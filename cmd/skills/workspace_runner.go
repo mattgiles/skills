@@ -35,6 +35,30 @@ func runStatusCommand(cmd *cobra.Command, target workspaceTarget) error {
 	return nil
 }
 
+func runCacheCleanCommand(cmd *cobra.Command, target workspaceTarget) error {
+	view := ui.New(cmd)
+	var (
+		result project.CacheCleanResult
+		err    error
+	)
+
+	err = view.RunTask("Cleaning cache", ui.TaskOptions{
+		UseErrorWriter: true,
+		SuccessText:    "Cleaned cache",
+		FailureText:    "Failed to clean cache",
+	}, func() error {
+		result, err = project.CleanCachePaths(target.Summary.RepoRoot, target.Summary.WorktreeRoot)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+
+	renderWorkspaceSummary(cmd, target.Summary, verboseEnabled(cmd))
+	renderCacheClean(cmd, result)
+	return nil
+}
+
 func runSyncCommand(cmd *cobra.Command, target workspaceTarget, options project.SyncOptions) error {
 	view := ui.New(cmd)
 	var (

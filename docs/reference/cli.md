@@ -41,6 +41,8 @@ skills
 │   ├── fish
 │   ├── powershell
 │   └── zsh
+├── cache
+│   └── clean [--global]
 ├── init [--global] [--cache local|global]
 ├── status [--global]
 ├── sync [--global] [--dry-run]
@@ -91,6 +93,23 @@ Subcommands:
 - `skills completion zsh`
 
 Shell-specific help describes how to load the generated script for the current shell and how to install it persistently.
+
+## `skills cache clean`
+
+Deletes cached canonical source repos and worktrees for the active scope so the next `skills sync` re-downloads sources and rebuilds worktrees.
+
+Behavior:
+
+- repo mode uses the current repo's active cache backend from `.agents/local.yaml`
+- in a repo configured with `cache.mode: global`, plain `skills cache clean` cleans the shared global cache
+- `--global` explicitly targets the shared home/global cache
+- the command does not edit manifests, state files, or installed skill symlinks
+
+Flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--global` | Clean the shared home/global cache roots |
 
 ## `skills config init`
 

@@ -27,6 +27,35 @@ func newStatusCommand() *cobra.Command {
 	return cmd
 }
 
+func newCacheCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "cache",
+		Short: "Manage cached source repos and worktrees",
+	}
+
+	cmd.AddCommand(newCacheCleanCommand())
+	return cmd
+}
+
+func newCacheCleanCommand() *cobra.Command {
+	var global bool
+
+	cmd := &cobra.Command{
+		Use:   "clean",
+		Short: "Delete cached repos and worktrees so the next sync re-downloads them",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			target, err := resolveWorkspaceTarget(cmd.Context(), global, false)
+			if err != nil {
+				return err
+			}
+			return runCacheCleanCommand(cmd, target)
+		},
+	}
+
+	cmd.Flags().BoolVar(&global, "global", false, "Operate on shared home/global cache roots")
+	return cmd
+}
+
 func newSyncCommand() *cobra.Command {
 	var global bool
 	var dryRun bool

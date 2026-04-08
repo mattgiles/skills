@@ -276,6 +276,201 @@ func TestAddCommandRepointsExistingSourceRepoToManifestURL(t *testing.T) {
 	}
 }
 
+func TestCacheCleanRemovesLocalCacheAndLeavesStateAndLinks(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
+
+	remote := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
+		t.Fatalf("init error = %v, stderr = %s", err, stderr)
+	}
+	writeProjectManifest(t, projectDir, manifestFor(remote, []string{"analytics"}))
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "sync"); err != nil {
+		t.Fatalf("sync error = %v, stderr = %s", err, stderr)
+	}
+
+	manifestBefore, err := os.ReadFile(filepath.Join(projectDir, ".agents", "manifest.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile(manifest) error = %v", err)
+	}
+	stateBefore, err := os.ReadFile(filepath.Join(projectDir, ".agents", "state.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile(state) error = %v", err)
+	}
+
+	canonicalPath := filepath.Join(projectDir, ".agents", "skills", "analytics")
+	if _, err := os.Lstat(canonicalPath); err != nil {
+		t.Fatalf("Lstat(%q) error = %v", canonicalPath, err)
+	}
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "cache", "clean")
+	if err != nil {
+		t.Fatalf("cache clean error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "Cache Clean") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+
+	manifestAfter, err := os.ReadFile(filepath.Join(projectDir, ".agents", "manifest.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile(manifest after) error = %v", err)
+	}
+	if string(manifestAfter) != string(manifestBefore) {
+		t.Fatalf("manifest changed during cache clean")
+	}
+
+	stateAfter, err := os.ReadFile(filepath.Join(projectDir, ".agents", "state.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile(state after) error = %v", err)
+	}
+	if string(stateAfter) != string(stateBefore) {
+		t.Fatalf("state changed during cache clean")
+	}
+
+	if _, err := os.Lstat(canonicalPath); err != nil {
+		t.Fatalf("canonical link missing after cache clean: %v", err)
+	}
+
+	assertDirEmpty(t, filepath.Join(projectDir, ".agents", "cache", "repos"))
+	assertDirEmpty(t, filepath.Join(projectDir, ".agents", "cache", "worktrees"))
+}
+
+func TestCacheCleanWorksWithoutManifestInsideRepo(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "cache", "clean")
+	if err != nil {
+		t.Fatalf("cache clean error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "Cache Clean") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+
+	assertDirEmpty(t, filepath.Join(projectDir, ".agents", "cache", "repos"))
+	assertDirEmpty(t, filepath.Join(projectDir, ".agents", "cache", "worktrees"))
+}
+
+func TestCacheCleanFailsOutsideRepo(t *testing.T) {
+	env := newTestEnv(t)
+
+	stdout, stderr, err := executeCommandInDir(t, env, t.TempDir(), "cache", "clean")
+	if err == nil {
+		t.Fatalf("expected cache clean error, stdout = %s, stderr = %s", stdout, stderr)
+	}
+	if !strings.Contains(err.Error(), "outside a Git repo; use --global") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestCacheCleanUsesActiveGlobalCacheForRepo(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=global"); err != nil {
+		t.Fatalf("init error = %v, stderr = %s", err, stderr)
+	}
+
+	globalRepoRoot := filepath.Join(env.dataHome, "skills", "repos")
+	globalWorktreeRoot := filepath.Join(env.dataHome, "skills", "worktrees")
+	mustWriteFile(t, filepath.Join(globalRepoRoot, "example", "README.md"), "repo\n")
+	mustWriteFile(t, filepath.Join(globalWorktreeRoot, "example", "README.md"), "worktree\n")
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "cache", "clean")
+	if err != nil {
+		t.Fatalf("cache clean error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "Cache Clean") || !strings.Contains(stdout, "global") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+
+	assertDirEmpty(t, globalRepoRoot)
+	assertDirEmpty(t, globalWorktreeRoot)
+	if _, err := os.Stat(filepath.Join(projectDir, ".agents", "cache")); !os.IsNotExist(err) {
+		t.Fatalf("did not expect local cache dir, got err = %v", err)
+	}
+}
+
+func TestCacheCleanGlobalWorksOutsideRepoAndLeavesHomeState(t *testing.T) {
+	env := newTestEnv(t)
+
+	if _, stderr, err := executeCommand(t, env, "init", "--global"); err != nil {
+		t.Fatalf("init --global error = %v, stderr = %s", err, stderr)
+	}
+
+	manifestPath := filepath.Join(env.home, ".agents", "manifest.yaml")
+	manifestBefore, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("ReadFile(home manifest) error = %v", err)
+	}
+
+	statePath := filepath.Join(env.home, ".agents", "state.yaml")
+	mustWriteFile(t, statePath, "sources: []\n")
+	stateBefore, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("ReadFile(home state) error = %v", err)
+	}
+
+	globalRepoRoot := filepath.Join(env.dataHome, "skills", "repos")
+	globalWorktreeRoot := filepath.Join(env.dataHome, "skills", "worktrees")
+	mustWriteFile(t, filepath.Join(globalRepoRoot, "example", "README.md"), "repo\n")
+	mustWriteFile(t, filepath.Join(globalWorktreeRoot, "example", "README.md"), "worktree\n")
+
+	stdout, stderr, err := executeCommandInDir(t, env, t.TempDir(), "cache", "clean", "--global")
+	if err != nil {
+		t.Fatalf("cache clean --global error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "Scope      global") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+
+	assertDirEmpty(t, globalRepoRoot)
+	assertDirEmpty(t, globalWorktreeRoot)
+
+	manifestAfter, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("ReadFile(home manifest after) error = %v", err)
+	}
+	if string(manifestAfter) != string(manifestBefore) {
+		t.Fatalf("home manifest changed during cache clean --global")
+	}
+
+	stateAfter, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("ReadFile(home state after) error = %v", err)
+	}
+	if string(stateAfter) != string(stateBefore) {
+		t.Fatalf("home state changed during cache clean --global")
+	}
+}
+
+func TestCacheCleanFailsWhenCacheRootIsAFile(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
+
+	mustWriteFile(t, filepath.Join(projectDir, ".agents", "cache", "repos"), "not a dir\n")
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "cache", "clean")
+	if err == nil {
+		t.Fatalf("expected cache clean error, stdout = %s, stderr = %s", stdout, stderr)
+	}
+	if !strings.Contains(err.Error(), "repo cache root exists and is not a directory") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestAddCommandPreservesManifestCommentsAndInlineSources(t *testing.T) {
 	requireGit(t)
 	env := newTestEnv(t)
@@ -2095,6 +2290,22 @@ func assertOutputHasFields(t *testing.T, output string, want ...string) {
 	}
 
 	t.Fatalf("output missing row %v:\n%s", want, output)
+}
+
+func assertDirEmpty(t *testing.T, path string) {
+	t.Helper()
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		t.Fatalf("ReadDir(%q) error = %v", path, err)
+	}
+	if len(entries) != 0 {
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		t.Fatalf("directory %q not empty: %v", path, names)
+	}
 }
 
 func resolvedPath(t *testing.T, path string) string {

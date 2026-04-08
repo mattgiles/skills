@@ -68,6 +68,14 @@ func renderProjectSync(cmd *cobra.Command, result project.SyncResult, verbose bo
 	renderWorkspaceSync(cmd, result, verbose)
 }
 
+func renderCacheClean(cmd *cobra.Command, result project.CacheCleanResult) {
+	view := ui.New(cmd)
+	_ = view.KeyValues("Cache Clean", [][2]string{
+		{"Repos", result.RepoRoot},
+		{"Worktrees", result.WorktreeRoot},
+	})
+}
+
 func renderWorkspaceSync(cmd *cobra.Command, result project.SyncResult, verbose bool) {
 	view := ui.New(cmd)
 
