@@ -27,8 +27,55 @@ type workspaceSummary struct {
 	WorktreeRoot string
 }
 
-func resolveRepoRoot(cwd string, requireManifest bool) (string, error) {
-	info, err := gitrepo.Discover(context.Background(), cwd)
+type workspaceTarget struct {
+	Scope       commandScope
+	TargetDir   string
+	ProjectRoot string
+	Config      config.Config
+	Summary     workspaceSummary
+}
+
+func resolveWorkspaceTarget(ctx context.Context, global bool, requireManifest bool) (workspaceTarget, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return workspaceTarget{}, err
+	}
+
+	if global {
+		cfg, err := loadConfig()
+		if err != nil {
+			return workspaceTarget{}, err
+		}
+		summary, err := globalWorkspaceSummary(ctx, cfg)
+		if err != nil {
+			return workspaceTarget{}, err
+		}
+		return workspaceTarget{
+			Scope:     scopeGlobal,
+			TargetDir: cwd,
+			Config:    cfg,
+			Summary:   summary,
+		}, nil
+	}
+
+	projectRoot, err := resolveRepoRoot(ctx, cwd, requireManifest)
+	if err != nil {
+		return workspaceTarget{}, err
+	}
+	summary, err := repoWorkspaceSummary(ctx, projectRoot)
+	if err != nil {
+		return workspaceTarget{}, err
+	}
+	return workspaceTarget{
+		Scope:       scopeRepo,
+		TargetDir:   projectRoot,
+		ProjectRoot: projectRoot,
+		Summary:     summary,
+	}, nil
+}
+
+func resolveRepoRoot(ctx context.Context, cwd string, requireManifest bool) (string, error) {
+	info, err := gitrepo.Discover(ctx, cwd)
 	if err != nil {
 		return "", err
 	}
@@ -51,7 +98,7 @@ func resolveRepoRoot(cwd string, requireManifest bool) (string, error) {
 	}
 }
 
-func repoWorkspaceSummary(projectRoot string) (workspaceSummary, error) {
+func repoWorkspaceSummary(_ context.Context, projectRoot string) (workspaceSummary, error) {
 	cacheConfig, err := project.LoadLocalConfig(projectRoot)
 	if err != nil {
 		return workspaceSummary{}, err
@@ -87,7 +134,7 @@ func repoWorkspaceSummary(projectRoot string) (workspaceSummary, error) {
 	return summary, nil
 }
 
-func globalWorkspaceSummary(cfg config.Config) (workspaceSummary, error) {
+func globalWorkspaceSummary(_ context.Context, cfg config.Config) (workspaceSummary, error) {
 	installDir, err := config.SharedSkillsDirPath(cfg)
 	if err != nil {
 		return workspaceSummary{}, err

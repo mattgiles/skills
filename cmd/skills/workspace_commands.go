@@ -1,9 +1,7 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -18,49 +16,11 @@ func newStatusCommand() *cobra.Command {
 		Use:   "status",
 		Short: "Show installed skill status for the current repo or shared home scope",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if global {
-				cfg, err := loadConfig()
-				if err != nil {
-					return err
-				}
-
-				report, err := project.HomeStatus(context.Background(), cfg)
-				if err != nil {
-					return err
-				}
-
-				summary, err := globalWorkspaceSummary(cfg)
-				if err != nil {
-					return err
-				}
-
-				renderWorkspaceSummary(cmd, summary, verboseEnabled(cmd))
-				renderWorkspaceStatus(cmd, report, verboseEnabled(cmd), "no home sources declared", "no home skills declared")
-				return nil
-			}
-
-			cwd, err := os.Getwd()
+			target, err := resolveWorkspaceTarget(cmd.Context(), global, true)
 			if err != nil {
 				return err
 			}
-			projectRoot, err := resolveRepoRoot(cwd, true)
-			if err != nil {
-				return err
-			}
-
-			report, err := project.Status(context.Background(), projectRoot)
-			if err != nil {
-				return err
-			}
-
-			summary, err := repoWorkspaceSummary(projectRoot)
-			if err != nil {
-				return err
-			}
-
-			renderWorkspaceSummary(cmd, summary, verboseEnabled(cmd))
-			renderWorkspaceStatus(cmd, report, verboseEnabled(cmd), "no repo sources declared", "no repo skills declared")
-			return nil
+			return runStatusCommand(cmd, target)
 		},
 	}
 
@@ -80,49 +40,11 @@ func newSyncCommand() *cobra.Command {
 				return err
 			}
 
-			if global {
-				cfg, err := loadConfig()
-				if err != nil {
-					return err
-				}
-
-				result, err := project.HomeSync(context.Background(), cfg, project.SyncOptions{DryRun: dryRun})
-				if err != nil {
-					return err
-				}
-
-				summary, err := globalWorkspaceSummary(cfg)
-				if err != nil {
-					return err
-				}
-
-				renderWorkspaceSummary(cmd, summary, verboseEnabled(cmd))
-				renderWorkspaceSync(cmd, result, verboseEnabled(cmd))
-				return nil
-			}
-
-			cwd, err := os.Getwd()
+			target, err := resolveWorkspaceTarget(cmd.Context(), global, true)
 			if err != nil {
 				return err
 			}
-			projectRoot, err := resolveRepoRoot(cwd, true)
-			if err != nil {
-				return err
-			}
-
-			result, err := project.Sync(context.Background(), projectRoot, project.SyncOptions{DryRun: dryRun})
-			if err != nil {
-				return err
-			}
-
-			summary, err := repoWorkspaceSummary(projectRoot)
-			if err != nil {
-				return err
-			}
-
-			renderWorkspaceSummary(cmd, summary, verboseEnabled(cmd))
-			renderWorkspaceSync(cmd, result, verboseEnabled(cmd))
-			return nil
+			return runSyncCommand(cmd, target, project.SyncOptions{DryRun: dryRun})
 		},
 	}
 
@@ -144,57 +66,15 @@ func newUpdateCommand() *cobra.Command {
 				return err
 			}
 
-			if global {
-				cfg, err := loadConfig()
-				if err != nil {
-					return err
-				}
-
-				result, err := project.HomeUpdate(context.Background(), cfg, project.UpdateOptions{
-					SelectedSources: args,
-					Sync:            syncAfter,
-					DryRun:          dryRun,
-				})
-				if err != nil {
-					return err
-				}
-
-				summary, err := globalWorkspaceSummary(cfg)
-				if err != nil {
-					return err
-				}
-
-				renderWorkspaceSummary(cmd, summary, verboseEnabled(cmd))
-				renderProjectUpdate(cmd, result, verboseEnabled(cmd))
-				return nil
-			}
-
-			cwd, err := os.Getwd()
+			target, err := resolveWorkspaceTarget(cmd.Context(), global, true)
 			if err != nil {
 				return err
 			}
-			projectRoot, err := resolveRepoRoot(cwd, true)
-			if err != nil {
-				return err
-			}
-
-			result, err := project.Update(context.Background(), projectRoot, project.UpdateOptions{
+			return runUpdateCommand(cmd, target, project.UpdateOptions{
 				SelectedSources: args,
 				Sync:            syncAfter,
 				DryRun:          dryRun,
 			})
-			if err != nil {
-				return err
-			}
-
-			summary, err := repoWorkspaceSummary(projectRoot)
-			if err != nil {
-				return err
-			}
-
-			renderWorkspaceSummary(cmd, summary, verboseEnabled(cmd))
-			renderProjectUpdate(cmd, result, verboseEnabled(cmd))
-			return nil
 		},
 	}
 

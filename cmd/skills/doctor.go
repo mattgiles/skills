@@ -22,34 +22,11 @@ func newDoctorCommand() *cobra.Command {
 		Use:   "doctor",
 		Short: "Diagnose config, workspace, and syncability issues",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cwd, err := os.Getwd()
+			target, err := resolveDoctorTarget(cmd.Context(), global)
 			if err != nil {
 				return err
 			}
-
-			scope := doctor.ScopeProject
-			targetDir := cwd
-			if global {
-				scope = doctor.ScopeGlobal
-			} else {
-				targetDir, err = resolveRepoRoot(cwd, false)
-				if err != nil {
-					return fmt.Errorf("outside a Git repo; use skills doctor --global")
-				}
-			}
-
-			report, err := doctor.Check(context.Background(), targetDir, scope)
-			if err != nil {
-				return err
-			}
-
-			renderDoctorSummary(cmd, targetDir, global)
-
-			renderDoctor(cmd, report, verboseEnabled(cmd))
-			if report.HasErrors() {
-				return errDoctorFoundProblems
-			}
-			return nil
+			return runDoctorCommand(cmd, target)
 		},
 	}
 
@@ -57,20 +34,45 @@ func newDoctorCommand() *cobra.Command {
 	return cmd
 }
 
-func renderDoctorSummary(cmd *cobra.Command, targetDir string, global bool) {
+func resolveDoctorTarget(ctx context.Context, global bool) (workspaceTarget, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return workspaceTarget{}, err
+	}
+
+	if global {
+		return workspaceTarget{
+			Scope:     scopeGlobal,
+			TargetDir: cwd,
+		}, nil
+	}
+
+	projectRoot, err := resolveRepoRoot(ctx, cwd, false)
+	if err != nil {
+		return workspaceTarget{}, errors.New("outside a Git repo; use skills doctor --global")
+	}
+
+	return workspaceTarget{
+		Scope:       scopeRepo,
+		TargetDir:   projectRoot,
+		ProjectRoot: projectRoot,
+	}, nil
+}
+
+func renderDoctorSummary(cmd *cobra.Command, ctx context.Context, target workspaceTarget) {
 	var (
 		summary workspaceSummary
 		err     error
 	)
 
-	if global {
+	if target.Scope == scopeGlobal {
 		cfg, loadErr := loadConfig()
 		if loadErr != nil {
 			return
 		}
-		summary, err = globalWorkspaceSummary(cfg)
+		summary, err = globalWorkspaceSummary(ctx, cfg)
 	} else {
-		summary, err = repoWorkspaceSummary(targetDir)
+		summary, err = repoWorkspaceSummary(ctx, target.ProjectRoot)
 	}
 	if err != nil {
 		return

@@ -49,7 +49,7 @@ func newAddCommand() *cobra.Command {
 				return fmt.Errorf("skill name must not be empty")
 			}
 
-			target, err := resolveSourceManifestTarget(global)
+			target, err := resolveSourceManifestTarget(cmd.Context(), global)
 			if err != nil {
 				return err
 			}
@@ -59,7 +59,14 @@ func newAddCommand() *cobra.Command {
 				return err
 			}
 
-			nextManifest, change, err := applySkillAdd(target.Manifest, sourceAlias, skillName, strings.TrimSpace(url), strings.TrimSpace(ref))
+			nextManifest, change, err := applySkillAdd(
+				cmd.Context(),
+				target.Manifest,
+				sourceAlias,
+				skillName,
+				strings.TrimSpace(url),
+				strings.TrimSpace(ref),
+			)
 			if err != nil {
 				return err
 			}
@@ -72,7 +79,7 @@ func newAddCommand() *cobra.Command {
 				return err
 			}
 
-			outcome, err := runAddSync(context.Background(), target)
+			outcome, err := runAddSync(cmd, target)
 			if err != nil {
 				if restoreErr := restoreManifestBytes(target.ManifestPath, originalBytes); restoreErr != nil {
 					return fmt.Errorf("%w; rollback manifest %s: %v", err, target.ManifestPath, restoreErr)
@@ -96,7 +103,7 @@ func newAddCommand() *cobra.Command {
 	return cmd
 }
 
-func applySkillAdd(manifest project.Manifest, sourceAlias string, skillName string, url string, ref string) (project.Manifest, addSkillChange, error) {
+func applySkillAdd(ctx context.Context, manifest project.Manifest, sourceAlias string, skillName string, url string, ref string) (project.Manifest, addSkillChange, error) {
 	nextManifest := cloneManifest(manifest)
 	change := addSkillChange{}
 
@@ -121,7 +128,7 @@ func applySkillAdd(manifest project.Manifest, sourceAlias string, skillName stri
 
 	sourceRef := ref
 	if sourceRef == "" {
-		inferredRef, err := source.InferDefaultRef(context.Background(), url)
+		inferredRef, err := source.InferDefaultRef(ctx, url)
 		if err != nil {
 			return project.Manifest{}, addSkillChange{}, fmt.Errorf("infer default ref for %s: %w", sourceAlias, err)
 		}
@@ -166,29 +173,4 @@ func manifestHasSkill(manifest project.Manifest, sourceAlias string, skillName s
 
 func restoreManifestBytes(path string, data []byte) error {
 	return os.WriteFile(path, data, 0o644)
-}
-
-func runAddSync(ctx context.Context, target sourceManifestTarget) (addSyncOutcome, error) {
-	switch target.Scope {
-	case scopeGlobal:
-		result, err := project.HomeSync(ctx, target.Config, project.SyncOptions{})
-		if err != nil {
-			return addSyncOutcome{}, err
-		}
-		summary, err := globalWorkspaceSummary(target.Config)
-		if err != nil {
-			return addSyncOutcome{}, err
-		}
-		return addSyncOutcome{summary: summary, result: result}, nil
-	default:
-		result, err := project.Sync(ctx, target.ProjectRoot, project.SyncOptions{})
-		if err != nil {
-			return addSyncOutcome{}, err
-		}
-		summary, err := repoWorkspaceSummary(target.ProjectRoot)
-		if err != nil {
-			return addSyncOutcome{}, err
-		}
-		return addSyncOutcome{summary: summary, result: result}, nil
-	}
 }

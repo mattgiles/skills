@@ -65,8 +65,12 @@ func inspectProjectOwnership(ctx context.Context, projectDir string) (ProjectOwn
 	return report, nil
 }
 
+func InspectProjectOwnershipContext(ctx context.Context, projectDir string) (ProjectOwnershipReport, error) {
+	return inspectProjectOwnership(ctx, projectDir)
+}
+
 func InspectProjectOwnership(projectDir string) (ProjectOwnershipReport, error) {
-	return inspectProjectOwnership(context.Background(), projectDir)
+	return InspectProjectOwnershipContext(context.Background(), projectDir)
 }
 
 func InspectProjectArtifacts(projectDir string) (ArtifactReport, error) {

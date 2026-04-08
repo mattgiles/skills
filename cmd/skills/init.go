@@ -21,16 +21,16 @@ func newInitCommand() *cobra.Command {
 		Use:   "init",
 		Short: "Initialize repo-local state by default, or shared home state with --global",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if globalScope {
+				return runHomeInit(cmd)
+			}
+
 			cwd, err := os.Getwd()
 			if err != nil {
 				return err
 			}
 
-			if globalScope {
-				return runHomeInit(cmd)
-			}
-
-			projectRoot, err := resolveRepoRoot(cwd, false)
+			projectRoot, err := resolveRepoRoot(cmd.Context(), cwd, false)
 			if err != nil {
 				return errors.New("outside a Git repo; use skills init --global")
 			}

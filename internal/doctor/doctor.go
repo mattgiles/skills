@@ -301,12 +301,12 @@ func checkProjectWorkspace(ctx context.Context, report *Report, cwd string, gitA
 
 	cacheConfig, ok, skipReason := inspectProjectCacheConfig(report, cwd, localConfigPath)
 	if !ok {
-		addProjectOwnershipFindings(report, cwd)
+		addProjectOwnershipFindings(ctx, report, cwd)
 		addSkippedSections(report, skipReason)
 		return
 	}
 
-	addProjectOwnershipFindings(report, cwd)
+	addProjectOwnershipFindings(ctx, report, cwd)
 
 	manifest, ok, skipReason := inspectWorkspaceInputs(report, manifestPath, statePath, "project", "skills init")
 	if !ok {
@@ -532,8 +532,8 @@ func loadAndValidateProjectCacheConfig(report *Report, configPath string) (confi
 	return cfg, onlySectionErrors(report, SectionConfig) == 0, configPaths
 }
 
-func addProjectOwnershipFindings(report *Report, projectDir string) {
-	ownership, err := project.InspectProjectOwnership(projectDir)
+func addProjectOwnershipFindings(ctx context.Context, report *Report, projectDir string) {
+	ownership, err := project.InspectProjectOwnershipContext(ctx, projectDir)
 	if err != nil {
 		report.addFinding(Finding{
 			Section:  SectionGit,

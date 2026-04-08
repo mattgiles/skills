@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"os/exec"
@@ -1380,6 +1381,28 @@ func TestHomeInitAndSyncUsesSeparateSharedPaths(t *testing.T) {
 	assertOutputHasFields(t, stdout, "repo-one", "analytics", "created", filepath.Join(env.home, ".claude", "skills", "analytics"))
 }
 
+func TestStatusCommandPropagatesRootContext(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
+		t.Fatalf("init error = %v, stderr = %s", err, stderr)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	stdout, stderr, err := executeCommandInDirWithContext(t, env, projectDir, ctx, nil, "status")
+	if err == nil {
+		t.Fatalf("expected status error, stdout = %s, stderr = %s", stdout, stderr)
+	}
+	if !strings.Contains(err.Error(), "context canceled") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 type testEnv struct {
 	configHome string
 	dataHome   string
@@ -1398,14 +1421,18 @@ func newTestEnv(t *testing.T) testEnv {
 }
 
 func executeCommand(t *testing.T, env testEnv, args ...string) (string, string, error) {
-	return executeCommandInDir(t, env, "", args...)
+	return executeCommandInDirWithContext(t, env, "", context.Background(), nil, args...)
 }
 
 func executeCommandInDir(t *testing.T, env testEnv, dir string, args ...string) (string, string, error) {
-	return executeCommandInDirWithInput(t, env, dir, nil, args...)
+	return executeCommandInDirWithContext(t, env, dir, context.Background(), nil, args...)
 }
 
 func executeCommandInDirWithInput(t *testing.T, env testEnv, dir string, input io.Reader, args ...string) (string, string, error) {
+	return executeCommandInDirWithContext(t, env, dir, context.Background(), input, args...)
+}
+
+func executeCommandInDirWithContext(t *testing.T, env testEnv, dir string, ctx context.Context, input io.Reader, args ...string) (string, string, error) {
 	t.Helper()
 
 	cmd := newRootCommand()
@@ -1436,7 +1463,7 @@ func executeCommandInDirWithInput(t *testing.T, env testEnv, dir string, input i
 		_ = os.Chdir(originalWD)
 	})
 
-	err = cmd.Execute()
+	err = cmd.ExecuteContext(ctx)
 	return stdout.String(), stderr.String(), err
 }
 
