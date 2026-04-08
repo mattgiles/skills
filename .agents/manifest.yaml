@@ -1,8 +1,13 @@
 sources:
-  golang:
-      url: https://github.com/samber/cc-skills-golang
-      ref: main
-
+    golang:
+        url: https://github.com/samber/cc-skills-golang
+        ref: main
 skills:
-  - source: golang
-    name: golang-cli
+    - source: golang
+      name: golang-cli
+    - source: golang
+      name: golang-code-style
+    - source: golang
+      name: golang-context
+    - source: golang
+      name: golang-structs-interfaces
