@@ -36,7 +36,7 @@ Worktrees <project>/.agents/cache/worktrees
 Repos <project>/.agents/cache/repos
 
 [Sources]
-repo-one resolved main <sha> - <project>/.agents/cache/repos/repo-one <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha> -
+repo-one resolved main <sha> - <project>/.agents/cache/repos/repo-one-<sha> <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha> -
 
 [Skills]
 repo-one analytics created <project>/.agents/skills/analytics <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha>/analytics -
@@ -62,7 +62,7 @@ Worktrees <project>/.agents/cache/worktrees
 Repos <project>/.agents/cache/repos
 
 [Sources]
-repo-one up-to-date main <sha> <sha> <project>/.agents/cache/repos/repo-one <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha> -
+repo-one up-to-date main <sha> <sha> <project>/.agents/cache/repos/repo-one-<sha> <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha> -
 
 [Skills]
 repo-one analytics linked <project>/.agents/skills/analytics <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha>/analytics -

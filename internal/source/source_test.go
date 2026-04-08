@@ -137,6 +137,39 @@ func TestSyncFetchesRemoteWithoutChangingLocalHead(t *testing.T) {
 	}
 }
 
+func TestSyncUpdatesOriginURLWhenSourceURLChanges(t *testing.T) {
+	requireGit(t)
+
+	originalRemote := initRepo(t, map[string]string{
+		"skills/find-skills/SKILL.md": "# find-skills",
+	})
+	updatedRemote := initRepo(t, map[string]string{
+		"skills/react-best-practices/SKILL.md": "# react-best-practices",
+	})
+	local := cloneRepo(t, originalRemote)
+	src := Source{Alias: "vercel", URL: updatedRemote, RepoPath: local}
+
+	updatedHead := gitCmdOutput(t, updatedRemote, "rev-parse", "HEAD")
+
+	cloned, err := Sync(context.Background(), src)
+	if err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+	if cloned {
+		t.Fatal("Sync() reported cloned for existing repo")
+	}
+
+	gotURL := gitCmdOutput(t, local, "remote", "get-url", "origin")
+	if gotURL != updatedRemote {
+		t.Fatalf("origin url = %q, want %q", gotURL, updatedRemote)
+	}
+
+	remoteTracking := gitCmdOutput(t, local, "rev-parse", "refs/remotes/origin/main")
+	if remoteTracking != updatedHead {
+		t.Fatalf("origin/main = %s, want %s", remoteTracking, updatedHead)
+	}
+}
+
 func TestListFilesAtCommit(t *testing.T) {
 	requireGit(t)
 
@@ -219,6 +252,33 @@ func TestRepoBasename(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := RepoBasename(tc.src); got != tc.want {
 				t.Fatalf("RepoBasename() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRepoCacheKeyUsesCanonicalSourceIdentity(t *testing.T) {
+	cases := []struct {
+		name string
+		a    string
+		b    string
+	}{
+		{
+			name: "https and ssh github url",
+			a:    "https://github.com/vercel-labs/agent-skills.git",
+			b:    "git@github.com:vercel-labs/agent-skills.git",
+		},
+		{
+			name: "https trims scheme details",
+			a:    "https://github.com/dagster-io/skills",
+			b:    "https://github.com/dagster-io/skills.git",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if gotA, gotB := RepoCacheKey(tc.a), RepoCacheKey(tc.b); gotA != gotB {
+				t.Fatalf("RepoCacheKey mismatch: %q != %q", gotA, gotB)
 			}
 		})
 	}

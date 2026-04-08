@@ -103,7 +103,7 @@ func selectManifestSources(manifest project.Manifest, repoRoot string, aliases [
 			Alias:    alias,
 			Ref:      entry.Ref,
 			URL:      entry.URL,
-			RepoPath: source.RepoPath(repoRoot, alias),
+			RepoPath: source.RepoPathForURL(repoRoot, entry.URL),
 		})
 	}
 

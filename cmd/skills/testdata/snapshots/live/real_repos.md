@@ -27,7 +27,7 @@ Worktrees <project>/.agents/cache/worktrees
 Repos <project>/.agents/cache/repos
 
 [Sources]
-dagster resolved master <sha> - <project>/.agents/cache/repos/dagster <project>/.agents/cache/worktrees/project-<sha>/dagster/<sha> -
+dagster resolved master <sha> - <project>/.agents/cache/repos/dagster-io-skills-<sha> <project>/.agents/cache/worktrees/project-<sha>/dagster/<sha> -
 
 [Skills]
 dagster dagster-expert created <project>/.agents/skills/dagster-expert <project>/.agents/cache/worktrees/project-<sha>/dagster/<sha>/skills/dagster-expert/skills/dagster-expert -
@@ -53,7 +53,7 @@ Worktrees <project>/.agents/cache/worktrees
 Repos <project>/.agents/cache/repos
 
 [Sources]
-dagster up-to-date master <sha> <sha> <project>/.agents/cache/repos/dagster <project>/.agents/cache/worktrees/project-<sha>/dagster/<sha> -
+dagster up-to-date master <sha> <sha> <project>/.agents/cache/repos/dagster-io-skills-<sha> <project>/.agents/cache/worktrees/project-<sha>/dagster/<sha> -
 
 [Skills]
 dagster dagster-expert linked <project>/.agents/skills/dagster-expert <project>/.agents/cache/worktrees/project-<sha>/dagster/<sha>/skills/dagster-expert/skills/dagster-expert -
@@ -92,7 +92,7 @@ Worktrees <project>/.agents/cache/worktrees
 Repos <project>/.agents/cache/repos
 
 [Sources]
-vercel resolved main <sha> - <project>/.agents/cache/repos/vercel <project>/.agents/cache/worktrees/project-<sha>/vercel/<sha> -
+vercel resolved main <sha> - <project>/.agents/cache/repos/vercel-labs-skills-<sha> <project>/.agents/cache/worktrees/project-<sha>/vercel/<sha> -
 
 [Skills]
 vercel find-skills created <project>/.agents/skills/find-skills <project>/.agents/cache/worktrees/project-<sha>/vercel/<sha>/skills/find-skills -
@@ -131,7 +131,7 @@ Worktrees <project>/.agents/cache/worktrees
 Repos <project>/.agents/cache/repos
 
 [Sources]
-terraform-skill resolved master <sha> - <project>/.agents/cache/repos/terraform-skill <project>/.agents/cache/worktrees/project-<sha>/terraform-skill/<sha> -
+terraform-skill resolved master <sha> - <project>/.agents/cache/repos/antonbabenko-terraform-skill-<sha> <project>/.agents/cache/worktrees/project-<sha>/terraform-skill/<sha> -
 
 [Skills]
 terraform-skill terraform-skill created <project>/.agents/skills/terraform-skill <project>/.agents/cache/worktrees/project-<sha>/terraform-skill/<sha> -
@@ -157,7 +157,7 @@ Worktrees <project>/.agents/cache/worktrees
 Repos <project>/.agents/cache/repos
 
 [Sources]
-terraform-skill up-to-date master <sha> <sha> <project>/.agents/cache/repos/terraform-skill <project>/.agents/cache/worktrees/project-<sha>/terraform-skill/<sha> -
+terraform-skill up-to-date master <sha> <sha> <project>/.agents/cache/repos/antonbabenko-terraform-skill-<sha> <project>/.agents/cache/worktrees/project-<sha>/terraform-skill/<sha> -
 
 [Skills]
 terraform-skill terraform-skill linked <project>/.agents/skills/terraform-skill <project>/.agents/cache/worktrees/project-<sha>/terraform-skill/<sha> -

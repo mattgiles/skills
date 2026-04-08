@@ -573,7 +573,11 @@ func parseSnapshotSections(value string) (snapshotSections, error) {
 		}
 
 		if current == "" {
-			return snapshotSections{}, fmt.Errorf("line %d: content before any section: %q", idx+1, line)
+			current = "Prelude"
+			if _, exists := result.sections[current]; !exists {
+				result.order = append(result.order, current)
+				result.sections[current] = []string{}
+			}
 		}
 		result.sections[current] = append(result.sections[current], line)
 	}
@@ -613,10 +617,16 @@ repo-one resolved main <sha>
 	}
 }
 
-func TestParseSnapshotSectionsRejectsContentBeforeSection(t *testing.T) {
-	_, err := parseSnapshotSections("Scope repo")
-	if err == nil {
-		t.Fatal("parseSnapshotSections() error = nil, want error")
+func TestParseSnapshotSectionsCapturesPrelude(t *testing.T) {
+	got, err := parseSnapshotSections("SUCCESS: added skill\n# Workspace\nScope repo")
+	if err != nil {
+		t.Fatalf("parseSnapshotSections() error = %v", err)
+	}
+	if len(got.order) != 2 || got.order[0] != "Prelude" || got.order[1] != "Workspace" {
+		t.Fatalf("section order = %#v", got.order)
+	}
+	if !containsLine(got.sections["Prelude"], "SUCCESS: added skill") {
+		t.Fatalf("prelude lines = %#v", got.sections["Prelude"])
 	}
 }
 

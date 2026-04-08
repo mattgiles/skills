@@ -3,6 +3,8 @@ package source
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
@@ -33,8 +35,20 @@ type SourceStatus struct {
 	LastError           string
 }
 
-func RepoPath(repoRoot string, alias string) string {
-	return filepath.Join(repoRoot, alias)
+func RepoPathForURL(repoRoot string, sourceURL string) string {
+	return filepath.Join(repoRoot, RepoCacheKey(sourceURL))
+}
+
+func RepoCacheKey(sourceURL string) string {
+	base := sourceIdentityLabel(sourceURL)
+	if base == "" {
+		base = "source"
+	}
+
+	identity := canonicalSourceIdentity(sourceURL)
+	sum := sha256.Sum256([]byte(identity))
+	suffix := hex.EncodeToString(sum[:])[:12]
+	return sanitizePathComponent(base) + "-" + suffix
 }
 
 func WorktreePath(worktreeRoot string, projectID string, alias string, commit string) string {
@@ -122,6 +136,10 @@ func Sync(ctx context.Context, src Source) (bool, error) {
 		return false, errors.New(status.LastError)
 	}
 
+	if err := ensureOriginURL(ctx, src); err != nil {
+		return false, err
+	}
+
 	if err := fetch(ctx, src); err != nil {
 		return false, err
 	}
@@ -140,6 +158,28 @@ func clone(ctx context.Context, src Source) error {
 
 func fetch(ctx context.Context, src Source) error {
 	_, err := gitOutput(ctx, "", "-C", src.RepoPath, "fetch", "--all", "--prune")
+	return err
+}
+
+func ensureOriginURL(ctx context.Context, src Source) error {
+	wantURL := strings.TrimSpace(src.URL)
+	if wantURL == "" {
+		return nil
+	}
+
+	currentURL, err := gitOutput(ctx, "", "-C", src.RepoPath, "remote", "get-url", "origin")
+	if err != nil {
+		if _, addErr := gitOutput(ctx, "", "-C", src.RepoPath, "remote", "add", "origin", wantURL); addErr != nil {
+			return addErr
+		}
+		return nil
+	}
+
+	if strings.TrimSpace(currentURL) == wantURL {
+		return nil
+	}
+
+	_, err = gitOutput(ctx, "", "-C", src.RepoPath, "remote", "set-url", "origin", wantURL)
 	return err
 }
 
@@ -277,6 +317,86 @@ func repoBasename(value string) string {
 	return trimGitSuffix(filepath.Base(value))
 }
 
+func sourceIdentityLabel(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+
+	if parsed, err := url.Parse(value); err == nil && parsed.Scheme != "" {
+		switch parsed.Scheme {
+		case "file":
+			return trimGitSuffix(filepath.Base(parsed.Path))
+		default:
+			repoPath := trimGitSuffix(path.Clean(parsed.Path))
+			repoPath = strings.Trim(repoPath, "/")
+			if repoPath != "" {
+				return strings.ReplaceAll(repoPath, "/", "-")
+			}
+		}
+	}
+
+	if strings.Contains(value, "@") && strings.Contains(value, ":") && !strings.Contains(value, "://") {
+		parts := strings.SplitN(value, ":", 2)
+		repoPart := strings.Trim(parts[1], "/")
+		repoPart = trimGitSuffix(path.Clean(repoPart))
+		if repoPart != "" {
+			return strings.ReplaceAll(repoPart, "/", "-")
+		}
+	}
+
+	return trimGitSuffix(filepath.Base(value))
+}
+
+func canonicalSourceIdentity(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+
+	if parsed, err := url.Parse(value); err == nil && parsed.Scheme != "" {
+		switch parsed.Scheme {
+		case "file":
+			if parsed.Path != "" {
+				return canonicalLocalPath(parsed.Path)
+			}
+		default:
+			host := strings.ToLower(parsed.Hostname())
+			repoPath := trimGitSuffix(path.Clean(parsed.Path))
+			repoPath = strings.TrimPrefix(repoPath, "/")
+			if host != "" && repoPath != "" {
+				return host + "/" + repoPath
+			}
+		}
+	}
+
+	if strings.Contains(value, "@") && strings.Contains(value, ":") && !strings.Contains(value, "://") {
+		parts := strings.SplitN(value, ":", 2)
+		hostPart := parts[0]
+		repoPart := parts[1]
+		if at := strings.LastIndex(hostPart, "@"); at >= 0 {
+			hostPart = hostPart[at+1:]
+		}
+		hostPart = strings.ToLower(strings.TrimSpace(hostPart))
+		repoPart = strings.TrimPrefix(trimGitSuffix(path.Clean(repoPart)), "/")
+		if hostPart != "" && repoPart != "" {
+			return hostPart + "/" + repoPart
+		}
+	}
+
+	return canonicalLocalPath(value)
+}
+
+func canonicalLocalPath(value string) string {
+	if abs, err := filepath.Abs(value); err == nil {
+		value = abs
+	}
+	if eval, err := filepath.EvalSymlinks(value); err == nil {
+		value = eval
+	}
+	return filepath.Clean(value)
+}
+
 func trimGitSuffix(value string) string {
 	value = strings.TrimSpace(value)
 	value = strings.TrimSuffix(value, ".git")
@@ -284,6 +404,29 @@ func trimGitSuffix(value string) string {
 		return ""
 	}
 	return value
+}
+
+func sanitizePathComponent(value string) string {
+	var b strings.Builder
+	for _, r := range strings.TrimSpace(value) {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r + ('a' - 'A'))
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	result := strings.Trim(b.String(), "-")
+	if result == "" {
+		return "source"
+	}
+	return result
 }
 
 func EnsureWorktree(ctx context.Context, src Source, path string, commit string) (bool, error) {

@@ -17,6 +17,7 @@ import (
 
 	"github.com/mattgiles/skills/internal/project"
 	"github.com/mattgiles/skills/internal/selfupdate"
+	"github.com/mattgiles/skills/internal/source"
 )
 
 func TestSourceAddGlobalPersistsHomeManifest(t *testing.T) {
@@ -211,6 +212,65 @@ func TestAddCommandAddsSkillToExistingRepoSourceAndSyncs(t *testing.T) {
 	}
 
 	canonicalPath := filepath.Join(resolvedProjectDir, ".agents", "skills", "analytics")
+	if _, err := os.Lstat(canonicalPath); err != nil {
+		t.Fatalf("expected canonical skill link %q: %v", canonicalPath, err)
+	}
+}
+
+func TestAddCommandRepointsExistingSourceRepoToManifestURL(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	resolvedProjectDir := resolvedPath(t, projectDir)
+	initGitRepo(t, projectDir)
+
+	originalRemote := initRemoteRepo(t, map[string]string{
+		"skills/find-skills/SKILL.md": "# find-skills",
+	})
+	updatedRemote := initRemoteRepo(t, map[string]string{
+		"skills/react-best-practices/SKILL.md": "# react-best-practices",
+	})
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
+		t.Fatalf("init error = %v, stderr = %s", err, stderr)
+	}
+	writeProjectManifest(t, projectDir, strings.Join([]string{
+		"sources:",
+		"  vercel:",
+		"    url: " + originalRemote,
+		"    ref: main",
+		"skills: []",
+		"",
+	}, "\n"))
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "sync"); err != nil {
+		t.Fatalf("initial sync error = %v, stderr = %s", err, stderr)
+	}
+
+	writeProjectManifest(t, projectDir, strings.Join([]string{
+		"sources:",
+		"  vercel:",
+		"    url: " + updatedRemote,
+		"    ref: main",
+		"skills: []",
+		"",
+	}, "\n"))
+
+	stdout, stderr, err := executeCommandInDir(t, env, projectDir, "add", "vercel", "react-best-practices")
+	if err != nil {
+		t.Fatalf("add error = %v, stderr = %s", err, stderr)
+	}
+	if !strings.Contains(stdout, `added skill "react-best-practices" from source "vercel"`) {
+		t.Fatalf("stdout = %q", stdout)
+	}
+
+	repoPath := source.RepoPathForURL(filepath.Join(resolvedProjectDir, ".agents", "cache", "repos"), updatedRemote)
+	gotURL := gitOutput(t, repoPath, "remote", "get-url", "origin")
+	if gotURL != updatedRemote {
+		t.Fatalf("origin url = %q, want %q", gotURL, updatedRemote)
+	}
+
+	canonicalPath := filepath.Join(resolvedProjectDir, ".agents", "skills", "react-best-practices")
 	if _, err := os.Lstat(canonicalPath); err != nil {
 		t.Fatalf("expected canonical skill link %q: %v", canonicalPath, err)
 	}

@@ -64,7 +64,7 @@ func resolveInputs(ws workspace, manifest Manifest) (map[string]*resolvedSource,
 			Alias:        alias,
 			URL:          url,
 			Ref:          manifestSource.Ref,
-			RepoPath:     source.RepoPath(ws.RepoRoot, alias),
+			RepoPath:     source.RepoPathForURL(ws.RepoRoot, url),
 			WorktreeRoot: ws.WorktreeRoot,
 			WorkspaceID:  workspaceID,
 		}
