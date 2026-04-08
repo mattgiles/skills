@@ -56,10 +56,10 @@ type repoOp struct {
 }
 
 type commandStep struct {
-	Command    string
-	WantStdout string
-	WantStderr string
-	WantExit   int
+	Command          string
+	WantStdoutAssert string
+	WantStderr       string
+	WantExit         int
 }
 
 func (*commandStep) isSnapshotStep() {}
@@ -173,10 +173,11 @@ func runSnapshotCommand(t *testing.T, env snapshotEnv, caseName string, step *co
 		t.Fatalf("%s: exit = %d, want %d\nstdout:\n%s\nstderr:\n%s", caseName, gotExit, step.WantExit, stdout, stderr)
 	}
 
-	wantStdout := normalizeSnapshotText(substituteSnapshotVars(step.WantStdout, env), env)
-	gotStdout := normalizeSnapshotText(stdout, env)
-	if gotStdout != wantStdout {
-		t.Fatalf("%s: stdout mismatch\nwant:\n%s\n\ngot:\n%s", caseName, wantStdout, gotStdout)
+	if err := assertSnapshotStdout(
+		normalizeSnapshotText(substituteSnapshotVars(step.WantStdoutAssert, env), env),
+		normalizeSnapshotText(stdout, env),
+	); err != nil {
+		t.Fatalf("%s: stdout mismatch: %v\nstdout:\n%s", caseName, err, normalizeSnapshotText(stdout, env))
 	}
 
 	wantStderr := normalizeSnapshotText(substituteSnapshotVars(step.WantStderr, env), env)
@@ -360,10 +361,12 @@ func parseSnapshotSuite(path string) (snapshotSuite, error) {
 			current.Steps = append(current.Steps, step)
 			lastCommand = step
 		case info == "stdout":
+			return snapshotSuite{}, fmt.Errorf("%s:%d: stdout blocks are no longer supported; use stdout-assert", path, startLine)
+		case info == "stdout-assert":
 			if lastCommand == nil {
-				return snapshotSuite{}, fmt.Errorf("%s:%d: stdout block must follow a command block", path, startLine)
+				return snapshotSuite{}, fmt.Errorf("%s:%d: stdout-assert block must follow a command block", path, startLine)
 			}
-			lastCommand.WantStdout = content
+			lastCommand.WantStdoutAssert = content
 		case info == "stderr":
 			if lastCommand == nil {
 				return snapshotSuite{}, fmt.Errorf("%s:%d: stderr block must follow a command block", path, startLine)
@@ -492,6 +495,173 @@ func normalizeSnapshotText(value string, env snapshotEnv) string {
 		lines[i] = strings.Join(strings.Fields(line), " ")
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func assertSnapshotStdout(want string, got string) error {
+	wantSections, err := parseSnapshotSections(want)
+	if err != nil {
+		return fmt.Errorf("parse expected stdout: %w", err)
+	}
+	gotSections, err := parseSnapshotSections(got)
+	if err != nil {
+		return fmt.Errorf("parse actual stdout: %w", err)
+	}
+
+	for _, section := range wantSections.order {
+		wantLines := wantSections.sections[section]
+		gotLines, ok := gotSections.sections[section]
+		if !ok {
+			return fmt.Errorf("missing section %q", section)
+		}
+
+		for _, wantLine := range wantLines {
+			if !containsLine(gotLines, wantLine) {
+				return fmt.Errorf(
+					"section %q missing line %q\nactual section:\n%s",
+					section,
+					wantLine,
+					strings.Join(gotLines, "\n"),
+				)
+			}
+		}
+	}
+
+	return nil
+}
+
+type snapshotSections struct {
+	order    []string
+	sections map[string][]string
+}
+
+func parseSnapshotSections(value string) (snapshotSections, error) {
+	lines := strings.Split(strings.TrimSpace(value), "\n")
+	result := snapshotSections{
+		order:    []string{},
+		sections: map[string][]string{},
+	}
+
+	current := ""
+	for idx, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			current = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "["), "]"))
+			if current == "" {
+				return snapshotSections{}, fmt.Errorf("line %d: empty section name", idx+1)
+			}
+			if _, exists := result.sections[current]; !exists {
+				result.order = append(result.order, current)
+				result.sections[current] = []string{}
+			}
+			continue
+		}
+
+		if strings.HasPrefix(line, "# ") {
+			current = strings.TrimSpace(strings.TrimPrefix(line, "# "))
+			if current == "" {
+				return snapshotSections{}, fmt.Errorf("line %d: empty rendered section", idx+1)
+			}
+			if _, exists := result.sections[current]; !exists {
+				result.order = append(result.order, current)
+				result.sections[current] = []string{}
+			}
+			continue
+		}
+
+		if current == "" {
+			return snapshotSections{}, fmt.Errorf("line %d: content before any section: %q", idx+1, line)
+		}
+		result.sections[current] = append(result.sections[current], line)
+	}
+
+	return result, nil
+}
+
+func containsLine(lines []string, want string) bool {
+	for _, line := range lines {
+		if line == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestParseSnapshotSections(t *testing.T) {
+	got, err := parseSnapshotSections(strings.TrimSpace(`
+[Workspace]
+Scope repo
+
+[Sources]
+repo-one resolved main <sha>
+`))
+	if err != nil {
+		t.Fatalf("parseSnapshotSections() error = %v", err)
+	}
+
+	if len(got.order) != 2 || got.order[0] != "Workspace" || got.order[1] != "Sources" {
+		t.Fatalf("section order = %#v", got.order)
+	}
+	if !containsLine(got.sections["Workspace"], "Scope repo") {
+		t.Fatalf("workspace lines = %#v", got.sections["Workspace"])
+	}
+	if !containsLine(got.sections["Sources"], "repo-one resolved main <sha>") {
+		t.Fatalf("source lines = %#v", got.sections["Sources"])
+	}
+}
+
+func TestParseSnapshotSectionsRejectsContentBeforeSection(t *testing.T) {
+	_, err := parseSnapshotSections("Scope repo")
+	if err == nil {
+		t.Fatal("parseSnapshotSections() error = nil, want error")
+	}
+}
+
+func TestAssertSnapshotStdout(t *testing.T) {
+	want := strings.TrimSpace(`
+[Workspace]
+Scope repo
+
+[Sources]
+repo-one resolved main <sha>
+`)
+
+	got := strings.TrimSpace(`
+# Workspace
+Scope repo
+Root <project>
+
+# Sources
+Source Status Ref Commit
+repo-one resolved main <sha>
+`)
+
+	if err := assertSnapshotStdout(want, got); err != nil {
+		t.Fatalf("assertSnapshotStdout() error = %v", err)
+	}
+}
+
+func TestAssertSnapshotStdoutMissingSection(t *testing.T) {
+	want := "[Sources]\nrepo-one resolved main <sha>"
+	got := "# Workspace\nScope repo"
+
+	err := assertSnapshotStdout(want, got)
+	if err == nil || !strings.Contains(err.Error(), `missing section "Sources"`) {
+		t.Fatalf("assertSnapshotStdout() error = %v, want missing section", err)
+	}
+}
+
+func TestAssertSnapshotStdoutMissingLine(t *testing.T) {
+	want := "[Sources]\nrepo-one resolved main <sha>"
+	got := "# Sources\nrepo-one linked main <sha>"
+
+	err := assertSnapshotStdout(want, got)
+	if err == nil || !strings.Contains(err.Error(), `section "Sources" missing line`) {
+		t.Fatalf("assertSnapshotStdout() error = %v, want missing line", err)
+	}
 }
 
 func splitCommandLine(value string) ([]string, error) {

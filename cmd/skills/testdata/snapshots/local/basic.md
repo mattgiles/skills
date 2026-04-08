@@ -26,29 +26,23 @@ skills:
 skills sync --verbose
 ```
 
-```stdout
-# Workspace
-Scope  repo
-Root  <project>
-Installs  <project>/.agents/skills
-Cache  local
-Worktrees  <project>/.agents/cache/worktrees
-Repos  <project>/.agents/cache/repos
+```stdout-assert
+[Workspace]
+Scope repo
+Root <project>
+Installs <project>/.agents/skills
+Cache local
+Worktrees <project>/.agents/cache/worktrees
+Repos <project>/.agents/cache/repos
 
+[Sources]
+repo-one resolved main <sha> - <project>/.agents/cache/repos/repo-one <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha> -
 
-# Sources
-Source  Status  Ref  Commit  Stored  Repo Path  Worktree Path  Message
-repo-one  resolved  main  <sha>  -  <project>/.agents/cache/repos/repo-one  <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha>  -
+[Skills]
+repo-one analytics created <project>/.agents/skills/analytics <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha>/analytics -
 
-
-# Skills
-Source  Skill  Status  Path  Target  Message
-repo-one  analytics  created  <project>/.agents/skills/analytics  <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha>/analytics  -
-
-
-# Claude
-Source  Skill  Status  Path  Target  Message
-repo-one  analytics  created  <project>/.claude/skills/analytics  <project>/.agents/skills/analytics  -
+[Claude]
+repo-one analytics created <project>/.claude/skills/analytics <project>/.agents/skills/analytics -
 ```
 
 ```stderr
@@ -58,29 +52,23 @@ repo-one  analytics  created  <project>/.claude/skills/analytics  <project>/.age
 skills status --verbose
 ```
 
-```stdout
-# Workspace
-Scope  repo
-Root  <project>
-Installs  <project>/.agents/skills
-Cache  local
-Worktrees  <project>/.agents/cache/worktrees
-Repos  <project>/.agents/cache/repos
+```stdout-assert
+[Workspace]
+Scope repo
+Root <project>
+Installs <project>/.agents/skills
+Cache local
+Worktrees <project>/.agents/cache/worktrees
+Repos <project>/.agents/cache/repos
 
+[Sources]
+repo-one up-to-date main <sha> <sha> <project>/.agents/cache/repos/repo-one <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha> -
 
-# Sources
-Source  Status  Ref  Commit  Stored  Repo Path  Worktree Path  Message
-repo-one  up-to-date  main  <sha>  <sha>  <project>/.agents/cache/repos/repo-one  <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha>  -
+[Skills]
+repo-one analytics linked <project>/.agents/skills/analytics <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha>/analytics -
 
-
-# Skills
-Source  Skill  Status  Path  Target  Message
-repo-one  analytics  linked  <project>/.agents/skills/analytics  <project>/.agents/cache/worktrees/project-<sha>/repo-one/<sha>/analytics  -
-
-
-# Claude
-Source  Skill  Status  Path  Target  Message
-repo-one  analytics  linked  <project>/.claude/skills/analytics  <project>/.agents/skills/analytics  -
+[Claude]
+repo-one analytics linked <project>/.claude/skills/analytics <project>/.agents/skills/analytics -
 ```
 
 ```stderr
