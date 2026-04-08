@@ -61,10 +61,6 @@ func resolveSourceManifestTarget(ctx context.Context, global bool) (sourceManife
 	}, nil
 }
 
-func saveManifestTarget(target sourceManifestTarget) error {
-	return project.SaveManifestAt(target.ManifestPath, target.Manifest)
-}
-
 func resolveManifestSources(ctx context.Context, global bool, aliases []string) ([]source.Source, error) {
 	target, err := resolveSourceManifestTarget(ctx, global)
 	if err != nil {

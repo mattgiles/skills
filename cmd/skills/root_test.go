@@ -216,6 +216,56 @@ func TestAddCommandAddsSkillToExistingRepoSourceAndSyncs(t *testing.T) {
 	}
 }
 
+func TestAddCommandPreservesManifestCommentsAndInlineSources(t *testing.T) {
+	requireGit(t)
+	env := newTestEnv(t)
+	projectDir := t.TempDir()
+	initGitRepo(t, projectDir)
+
+	remote := initRemoteRepo(t, map[string]string{
+		"existing/SKILL.md":  "# existing",
+		"analytics/SKILL.md": "# analytics",
+	})
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "init", "--cache=local"); err != nil {
+		t.Fatalf("init error = %v, stderr = %s", err, stderr)
+	}
+
+	writeProjectManifest(t, projectDir, strings.Join([]string{
+		"# manifest comment",
+		"sources:",
+		"  # keep source comment",
+		"  repo-one: {url: " + remote + ", ref: main}",
+		"",
+		"skills:",
+		"  # keep skills comment",
+		"  - source: repo-one",
+		"    name: existing",
+		"",
+	}, "\n"))
+
+	if _, stderr, err := executeCommandInDir(t, env, projectDir, "add", "repo-one", "analytics"); err != nil {
+		t.Fatalf("add error = %v, stderr = %s", err, stderr)
+	}
+
+	manifestData, err := os.ReadFile(filepath.Join(projectDir, ".agents", "manifest.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile(manifest) error = %v", err)
+	}
+
+	for _, want := range []string{
+		"# manifest comment",
+		"# keep source comment",
+		"repo-one: {url: " + remote + ", ref: main}",
+		"# keep skills comment",
+		"name: analytics",
+	} {
+		if !strings.Contains(string(manifestData), want) {
+			t.Fatalf("manifest missing %q:\n%s", want, string(manifestData))
+		}
+	}
+}
+
 func TestAddCommandAdvancesOnlyTargetSourceWhenNewSkillExistsUpstream(t *testing.T) {
 	requireGit(t)
 	env := newTestEnv(t)

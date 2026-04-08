@@ -3,10 +3,10 @@ module github.com/mattgiles/skills
 go 1.24.0
 
 require (
+	github.com/goccy/go-yaml v1.19.2
 	github.com/pterm/pterm v0.12.83
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.5
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

@@ -114,6 +114,83 @@ func TestLocalConfigRoundTripDefaultsToLocal(t *testing.T) {
 	}
 }
 
+func TestLoadManifestRejectsUnknownKey(t *testing.T) {
+	projectDir := resolvedPath(t, t.TempDir())
+	path := ManifestPath(projectDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte("sources: {}\nskills: []\nextra: true\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	_, err := LoadManifest(projectDir)
+	if err == nil {
+		t.Fatal("LoadManifest() expected unknown key error")
+	}
+	if !strings.Contains(err.Error(), `unknown field "extra"`) {
+		t.Fatalf("LoadManifest() error = %v", err)
+	}
+}
+
+func TestLoadLocalConfigRejectsUnknownKey(t *testing.T) {
+	projectDir := resolvedPath(t, t.TempDir())
+	path := LocalConfigPath(projectDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte("cache:\n  mode: local\n  extra: true\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	_, err := LoadLocalConfig(projectDir)
+	if err == nil {
+		t.Fatal("LoadLocalConfig() expected unknown key error")
+	}
+	if !strings.Contains(err.Error(), `unknown field "extra"`) {
+		t.Fatalf("LoadLocalConfig() error = %v", err)
+	}
+}
+
+func TestSaveLocalConfigPreservesComments(t *testing.T) {
+	projectDir := resolvedPath(t, t.TempDir())
+	path := LocalConfigPath(projectDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	contents := strings.Join([]string{
+		"cache:",
+		"  # keep mode comment",
+		"  mode: local",
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if err := SaveLocalConfig(projectDir, LocalConfig{
+		Cache: LocalCacheConfig{Mode: CacheModeGlobal},
+	}); err != nil {
+		t.Fatalf("SaveLocalConfig() error = %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !strings.Contains(string(data), "# keep mode comment") {
+		t.Fatalf("saved local config lost comment:\n%s", string(data))
+	}
+
+	loaded, err := LoadLocalConfig(projectDir)
+	if err != nil {
+		t.Fatalf("LoadLocalConfig() error = %v", err)
+	}
+	if loaded.Mode != CacheModeGlobal {
+		t.Fatalf("LoadLocalConfig().Mode = %q, want %q", loaded.Mode, CacheModeGlobal)
+	}
+}
+
 func TestProjectSyncDryRunDoesNotWriteStateOrLinks(t *testing.T) {
 	requireGit(t)
 	_ = newProjectTestEnv(t)

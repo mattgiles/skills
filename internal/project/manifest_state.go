@@ -10,9 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/mattgiles/skills/internal/config"
+	"github.com/mattgiles/skills/internal/yamlx"
 )
 
 func LoadLocalConfig(projectDir string) (ProjectCacheConfig, error) {
@@ -33,7 +32,7 @@ func LoadLocalConfigAt(path string) (ProjectCacheConfig, error) {
 	}
 
 	cfg := DefaultLocalConfig()
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := yamlx.Unmarshal(data, &cfg, yamlx.DecodeOptions{Strict: true}); err != nil {
 		return ProjectCacheConfig{}, fmt.Errorf("parse local config %s: %w", path, err)
 	}
 	ensureLocalConfigDefaults(&cfg)
@@ -61,11 +60,51 @@ func SaveLocalConfigAt(path string, cfg LocalConfig) error {
 		return err
 	}
 
-	data, err := yaml.Marshal(&cfg)
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return yamlx.WriteValueFile(path, &cfg)
+	} else if err != nil {
+		return err
+	}
+
+	file, _, err := yamlx.ParseFile(path)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+
+	root, err := yamlx.RootMapping(file)
+	if err != nil {
+		return err
+	}
+
+	cacheValue := yamlx.FindMappingValue(root, "cache")
+	if cacheValue == nil {
+		update, err := yamlx.ParseMapping("cache: {}\n")
+		if err != nil {
+			return err
+		}
+		root.Merge(update)
+		cacheValue = yamlx.FindMappingValue(root, "cache")
+	}
+	if cacheValue == nil {
+		return fmt.Errorf("local config %s is missing cache", path)
+	}
+
+	cacheMapping, err := ensureSourceMapping(cacheValue)
+	if err != nil {
+		return err
+	}
+
+	update, err := yamlx.ParseMapping(fmt.Sprintf("mode: %q\n", cfg.Cache.Mode))
+	if err != nil {
+		return err
+	}
+	if existing := yamlx.FindMappingValue(cacheMapping, "mode"); existing != nil {
+		existing.Value = update.Values[0].Value
+	} else {
+		cacheMapping.Merge(update)
+	}
+
+	return yamlx.WriteASTFile(path, file)
 }
 
 func ValidateLocalConfig(cfg LocalConfig) error {
@@ -204,7 +243,7 @@ func LoadManifestAt(path string) (Manifest, error) {
 	}
 
 	manifest := DefaultManifest()
-	if err := yaml.Unmarshal(data, &manifest); err != nil {
+	if err := yamlx.Unmarshal(data, &manifest, yamlx.DecodeOptions{Strict: true}); err != nil {
 		return Manifest{}, fmt.Errorf("parse manifest %s: %w", path, err)
 	}
 
@@ -230,12 +269,7 @@ func SaveManifestAt(path string, manifest Manifest) error {
 		return err
 	}
 
-	data, err := yaml.Marshal(&manifest)
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(path, data, 0o644)
+	return yamlx.WriteValueFile(path, &manifest)
 }
 
 func LoadState(projectDir string) (State, error) {
@@ -252,7 +286,7 @@ func LoadStateAt(path string) (State, error) {
 	}
 
 	var state State
-	if err := yaml.Unmarshal(data, &state); err != nil {
+	if err := yamlx.Unmarshal(data, &state, yamlx.DecodeOptions{}); err != nil {
 		return State{}, fmt.Errorf("parse state %s: %w", path, err)
 	}
 	return state, nil
@@ -267,11 +301,7 @@ func SaveStateAt(path string, state State) error {
 		return err
 	}
 
-	data, err := yaml.Marshal(&state)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0o644)
+	return yamlx.WriteValueFile(path, &state)
 }
 
 func ValidateManifest(manifest Manifest) error {

@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mattgiles/skills/internal/discovery"
+	"github.com/mattgiles/skills/internal/project"
 	"github.com/mattgiles/skills/internal/source"
 	"github.com/mattgiles/skills/internal/ui"
 )
@@ -64,8 +65,7 @@ func newSourceAddCommand() *cobra.Command {
 				}
 			}
 
-			target.Manifest.Sources[alias] = newManifestSource(url, sourceRef)
-			if err := saveManifestTarget(target); err != nil {
+			if err := project.UpsertManifestSourceAt(target.ManifestPath, alias, newManifestSource(url, sourceRef)); err != nil {
 				return err
 			}
 

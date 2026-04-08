@@ -8,7 +8,9 @@ import (
 	"regexp"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"github.com/goccy/go-yaml/ast"
+
+	"github.com/mattgiles/skills/internal/yamlx"
 )
 
 var aliasPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
@@ -53,7 +55,7 @@ func Load(path string) (Config, error) {
 		return Config{}, err
 	}
 
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := yamlx.Unmarshal(data, &cfg, yamlx.DecodeOptions{Strict: true}); err != nil {
 		return Config{}, fmt.Errorf("parse config %s: %w", resolvedPath, err)
 	}
 
@@ -73,12 +75,37 @@ func Save(path string, cfg Config) error {
 		return err
 	}
 
-	data, err := yaml.Marshal(&cfg)
+	if _, err := os.Stat(resolvedPath); errors.Is(err, os.ErrNotExist) {
+		return yamlx.WriteValueFile(resolvedPath, &cfg)
+	} else if err != nil {
+		return err
+	}
+
+	file, _, err := yamlx.ParseFile(resolvedPath)
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(resolvedPath, data, 0o644)
+	root, err := yamlx.RootMapping(file)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range []struct {
+		key   string
+		value string
+	}{
+		{key: "repo_root", value: cfg.RepoRoot},
+		{key: "worktree_root", value: cfg.WorktreeRoot},
+		{key: "shared_skills_dir", value: cfg.SharedSkillsDir},
+		{key: "shared_claude_skills_dir", value: cfg.SharedClaudeSkillsDir},
+	} {
+		if err := upsertStringValue(root, entry.key, entry.value); err != nil {
+			return err
+		}
+	}
+
+	return yamlx.WriteASTFile(resolvedPath, file)
 }
 
 func RepoRootPath(cfg Config) (string, error) {
@@ -190,4 +217,23 @@ func skillsConfigHome() (string, error) {
 	}
 
 	return filepath.Join(home, ".config"), nil
+}
+
+func upsertStringValue(target *ast.MappingNode, key string, value string) error {
+	update, err := yamlx.ParseMapping(singleStringMappingSnippet(key, value))
+	if err != nil {
+		return err
+	}
+
+	if existing := yamlx.FindMappingValue(target, key); existing != nil {
+		existing.Value = update.Values[0].Value
+		return nil
+	}
+
+	target.Merge(update)
+	return nil
+}
+
+func singleStringMappingSnippet(key string, value string) string {
+	return fmt.Sprintf("%s: %q\n", key, value)
 }

@@ -61,7 +61,7 @@ func newAddCommand() *cobra.Command {
 				return err
 			}
 
-			nextManifest, change, err := applySkillAdd(
+			_, change, err := applySkillAdd(
 				cmd.Context(),
 				target.Manifest,
 				sourceAlias,
@@ -77,7 +77,18 @@ func newAddCommand() *cobra.Command {
 				return nil
 			}
 
-			if err := project.SaveManifestAt(target.ManifestPath, nextManifest); err != nil {
+			if change.AddedSource {
+				if err := project.UpsertManifestSourceAt(target.ManifestPath, sourceAlias, project.ManifestSource{
+					URL: change.SourceURL,
+					Ref: change.SourceRef,
+				}); err != nil {
+					return err
+				}
+			}
+			if err := project.AppendManifestSkillAt(target.ManifestPath, project.ManifestSkill{
+				Source: sourceAlias,
+				Name:   skillName,
+			}); err != nil {
 				return err
 			}
 

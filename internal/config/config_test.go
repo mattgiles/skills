@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -59,6 +60,68 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if got.SharedClaudeSkillsDir != want.SharedClaudeSkillsDir {
 		t.Fatalf("SharedClaudeSkillsDir = %q, want %q", got.SharedClaudeSkillsDir, want.SharedClaudeSkillsDir)
+	}
+}
+
+func TestLoadRejectsUnknownKey(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("repo_root: ~/repos\nunexpected: true\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load() expected unknown key error")
+	}
+	if !strings.Contains(err.Error(), `unknown field "unexpected"`) {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
+
+func TestSavePreservesComments(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	contents := strings.Join([]string{
+		"# repo root comment",
+		`repo_root: "~/custom/repos"`,
+		"# worktree comment",
+		`worktree_root: "~/custom/worktrees"`,
+		"# shared skills comment",
+		`shared_skills_dir: "~/.agents/skills"`,
+		`shared_claude_skills_dir: "~/.claude/skills"`,
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if err := Save(path, Config{
+		RepoRoot:              "~/next/repos",
+		WorktreeRoot:          "~/next/worktrees",
+		SharedSkillsDir:       "~/.agents/shared-skills",
+		SharedClaudeSkillsDir: "~/.claude/shared-skills",
+	}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	for _, want := range []string{
+		"# repo root comment",
+		"# worktree comment",
+		"# shared skills comment",
+		`repo_root: "~/next/repos"`,
+		`shared_skills_dir: "~/.agents/shared-skills"`,
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("saved config missing %q:\n%s", want, string(data))
+		}
 	}
 }
 
