@@ -1822,7 +1822,7 @@ func TestProjectSyncUpdateAdoptsNewSkillInOneStep(t *testing.T) {
 	}
 }
 
-func TestProjectStatusReportsInspectFailure(t *testing.T) {
+func TestProjectStatusIgnoresUnreachableStoredCommit(t *testing.T) {
 	requireGit(t)
 	env := newTestEnv(t)
 	projectDir := t.TempDir()
@@ -1857,11 +1857,8 @@ func TestProjectStatusReportsInspectFailure(t *testing.T) {
 		t.Fatalf("project status error = %v, stderr = %s", err, stderr)
 	}
 
-	assertOutputHasFields(t, stdout, "repo-one", "inspect-failed", "main", commit[:12])
-	assertOutputHasFields(t, stdout, "repo-one", "analytics", "inspect-failed")
-	if !strings.Contains(stdout, "deadbeef") {
-		t.Fatalf("status output missing underlying inspect error:\n%s", stdout)
-	}
+	assertOutputHasFields(t, stdout, "repo-one", "update-available", "main", commit[:12], "last", "resolved", "deadbeef")
+	assertOutputHasFields(t, stdout, "repo-one", "analytics", "linked")
 }
 
 func TestHomeInitAndSyncUsesSeparateSharedPaths(t *testing.T) {

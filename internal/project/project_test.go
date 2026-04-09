@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/mattgiles/skills/internal/config"
+	"github.com/mattgiles/skills/internal/source"
 )
 
 func TestValidateManifestRejectsDuplicateSkills(t *testing.T) {
@@ -265,6 +266,46 @@ func TestProjectStatusAfterSyncIsHealthy(t *testing.T) {
 	}
 }
 
+func TestProjectStatusAfterSourceRepointIgnoresUnreachableStoredCommit(t *testing.T) {
+	requireGit(t)
+	_ = newProjectTestEnv(t)
+	projectDir := resolvedPath(t, t.TempDir())
+	initGitRepo(t, projectDir)
+
+	remoteOne := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+	remoteTwo := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics v2",
+	})
+
+	if _, err := InitProject(context.Background(), projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
+		t.Fatalf("InitProject() error = %v", err)
+	}
+	writeProjectManifest(t, projectDir, manifestFor(remoteOne, "main", []string{"analytics"}))
+
+	if _, err := Sync(context.Background(), projectDir, SyncOptions{}); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+
+	writeProjectManifest(t, projectDir, manifestFor(remoteTwo, "main", []string{"analytics"}))
+	if _, err := source.Sync(context.Background(), source.Source{
+		Alias:    "repo-one",
+		URL:      remoteTwo,
+		RepoPath: source.RepoPathForURL(RepoRoot(projectDir), remoteTwo),
+	}); err != nil {
+		t.Fatalf("source.Sync() error = %v", err)
+	}
+
+	report, err := Status(context.Background(), projectDir)
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+
+	assertSourceStatus(t, report.Sources, "repo-one", "update-available")
+	assertLinkStatus(t, report.SkillLinks, "repo-one", "analytics", "stale")
+}
+
 func TestProjectUpdateDryRunPreservesStateAndLinks(t *testing.T) {
 	requireGit(t)
 	_ = newProjectTestEnv(t)
@@ -393,6 +434,54 @@ func TestProjectSyncWithoutUpdateKeepsStoredCommit(t *testing.T) {
 	if !strings.Contains(err.Error(), "repo-one/lint: missing-skill") {
 		t.Fatalf("Sync() error = %v", err)
 	}
+}
+
+func TestProjectSyncAfterSourceRepointAdvancesWhenStoredCommitIsMissing(t *testing.T) {
+	requireGit(t)
+	_ = newProjectTestEnv(t)
+	projectDir := resolvedPath(t, t.TempDir())
+	initGitRepo(t, projectDir)
+
+	remoteOne := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics",
+	})
+	remoteTwo := initRemoteRepo(t, map[string]string{
+		"analytics/SKILL.md": "# analytics v2",
+	})
+
+	if _, err := InitProject(context.Background(), projectDir, InitProjectOptions{CacheMode: CacheModeLocal}); err != nil {
+		t.Fatalf("InitProject() error = %v", err)
+	}
+	writeProjectManifest(t, projectDir, manifestFor(remoteOne, "main", []string{"analytics"}))
+
+	if _, err := Sync(context.Background(), projectDir, SyncOptions{}); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+
+	writeProjectManifest(t, projectDir, manifestFor(remoteTwo, "main", []string{"analytics"}))
+
+	result, err := Sync(context.Background(), projectDir, SyncOptions{})
+	if err != nil {
+		t.Fatalf("Sync() after source repoint error = %v", err)
+	}
+	assertSourceStatus(t, result.Sources, "repo-one", "updated")
+	assertLinkStatus(t, result.SkillLinks, "repo-one", "analytics", "updated")
+
+	state, err := LoadState(projectDir)
+	if err != nil {
+		t.Fatalf("LoadState() error = %v", err)
+	}
+	commitTwo := gitOutput(t, remoteTwo, "rev-parse", "HEAD")
+	if len(state.Sources) != 1 || state.Sources[0].ResolvedCommit != commitTwo {
+		t.Fatalf("unexpected state sources: %+v", state.Sources)
+	}
+
+	report, err := Status(context.Background(), projectDir)
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+	assertSourceStatus(t, report.Sources, "repo-one", "up-to-date")
+	assertLinkStatus(t, report.SkillLinks, "repo-one", "analytics", "linked")
 }
 
 func TestProjectSyncWithUpdateAdvancesStateAndInstallsNewSkill(t *testing.T) {

@@ -123,7 +123,7 @@ func resolveSourcesForStatus(ctx context.Context, resolvedSources map[string]*re
 			}
 		}
 
-		setDesiredCommitForStatus(src, hasPrev, prev)
+		setDesiredCommitForStatus(ctx, src, hasPrev, prev)
 		if status.Exists && status.IsGitRepo && strings.TrimSpace(src.DesiredCommit) != "" {
 			src.WorktreePath = source.WorktreePath(src.WorktreeRoot, src.WorkspaceID, src.Alias, src.DesiredCommit)
 			report.WorktreePath = src.WorktreePath
@@ -290,15 +290,28 @@ func ensureSourceReady(ctx context.Context, src *resolvedSource, cloneMissing bo
 	return status, nil
 }
 
-func setDesiredCommitForStatus(src *resolvedSource, hasPrev bool, prev SourceState) {
+func setDesiredCommitForStatus(ctx context.Context, src *resolvedSource, hasPrev bool, prev SourceState) {
 	switch {
-	case hasPrev && prev.Ref == src.Ref && strings.TrimSpace(prev.ResolvedCommit) != "":
+	case storedCommitExists(ctx, src, hasPrev, prev):
 		src.DesiredCommit = prev.ResolvedCommit
 	case strings.TrimSpace(src.CurrentCommit) != "":
 		src.DesiredCommit = src.CurrentCommit
 	default:
 		src.DesiredCommit = ""
 	}
+}
+
+func storedCommitExists(ctx context.Context, src *resolvedSource, hasPrev bool, prev SourceState) bool {
+	if !hasPrev || prev.Ref != src.Ref || strings.TrimSpace(prev.ResolvedCommit) == "" {
+		return false
+	}
+
+	_, err := source.ResolveCommit(ctx, source.Source{
+		Alias:    src.Alias,
+		URL:      src.URL,
+		RepoPath: src.RepoPath,
+	}, prev.ResolvedCommit)
+	return err == nil
 }
 
 func loadSkillsForCommit(ctx context.Context, src *resolvedSource) (map[string][]discovery.DiscoveredSkill, error) {
@@ -354,7 +367,7 @@ func resolveSyncSource(ctx context.Context, src *resolvedSource, prev SourceStat
 		return
 	}
 
-	useStored := hasPrev && prev.Ref == src.Ref && strings.TrimSpace(prev.ResolvedCommit) != ""
+	useStored := storedCommitExists(ctx, src, hasPrev, prev)
 	if useStored {
 		src.DesiredCommit = prev.ResolvedCommit
 		report.Commit = shortCommit(prev.ResolvedCommit)
