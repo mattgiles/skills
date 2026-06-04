@@ -255,6 +255,138 @@ func LoadManifestAt(path string) (Manifest, error) {
 	return manifest, nil
 }
 
+// FragmentDirPath returns the manifest fragment directory for a project.
+// External tools write committed `.agents/manifest.d/*.yaml` files there; the
+// CLI merges them with the main manifest when loading effective read-time state.
+func FragmentDirPath(projectDir string) string {
+	return filepath.Join(projectDir, ".agents", "manifest.d")
+}
+
+// LoadFragments loads every `*.yaml` manifest fragment under the project's
+// fragment directory in lexicographic filename order. A missing directory
+// yields (nil, nil); directories and non-`.yaml` entries are skipped.
+//
+// Fragments are parsed with relaxed validation: a fragment may legitimately
+// declare a skill under a source defined in the main manifest (or another
+// fragment), so the per-file source-existence check is deferred to the merged
+// manifest's ValidateManifest (see LoadEffectiveManifest). Syntax errors and
+// unknown keys are still rejected per-file.
+func LoadFragments(projectDir string) ([]Manifest, error) {
+	dir := FragmentDirPath(projectDir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	fragments := make([]Manifest, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+		fragment, err := loadFragmentAt(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			return nil, fmt.Errorf("load fragment %s: %w", entry.Name(), err)
+		}
+		fragments = append(fragments, fragment)
+	}
+	return fragments, nil
+}
+
+// loadFragmentAt reads and strict-parses a single fragment file without running
+// the full ValidateManifest (which would reject cross-file source references).
+func loadFragmentAt(path string) (Manifest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return Manifest{}, fmt.Errorf("manifest not found: %s", path)
+		}
+		return Manifest{}, err
+	}
+
+	manifest := DefaultManifest()
+	if err := yamlx.Unmarshal(data, &manifest, yamlx.DecodeOptions{Strict: true}); err != nil {
+		return Manifest{}, fmt.Errorf("parse manifest %s: %w", path, err)
+	}
+	ensureManifestDefaults(&manifest)
+	return manifest, nil
+}
+
+// MergeManifests merges base with the given fragments into a single effective
+// manifest. Source aliases must be unique across the base and all fragments;
+// a collision is an error. Duplicate (source,name) skill pairs are silently
+// deduped with the first occurrence winning (base before fragments, fragments
+// in LoadFragments order).
+func MergeManifests(base Manifest, fragments ...Manifest) (Manifest, error) {
+	ensureManifestDefaults(&base)
+
+	merged := Manifest{
+		Sources: make(map[string]ManifestSource, len(base.Sources)),
+		Skills:  make([]ManifestSkill, 0, len(base.Skills)),
+	}
+	for alias, src := range base.Sources {
+		merged.Sources[alias] = src
+	}
+
+	seen := map[string]struct{}{}
+	for _, sk := range base.Skills {
+		key := sk.Source + "\x00" + sk.Name
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		merged.Skills = append(merged.Skills, sk)
+	}
+
+	for _, fragment := range fragments {
+		ensureManifestDefaults(&fragment)
+		for alias, src := range fragment.Sources {
+			if _, ok := merged.Sources[alias]; ok {
+				return Manifest{}, fmt.Errorf("duplicate source alias %q across manifest and fragments", alias)
+			}
+			merged.Sources[alias] = src
+		}
+		for _, sk := range fragment.Skills {
+			key := sk.Source + "\x00" + sk.Name
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			merged.Skills = append(merged.Skills, sk)
+		}
+	}
+
+	return merged, nil
+}
+
+// LoadEffectiveManifest loads the main manifest, merges every fragment under
+// `.agents/manifest.d/`, and validates the merged result. Per-file validation
+// already happens during loading; the final ValidateManifest catches cross-file
+// issues such as a fragment skill referencing a source declared elsewhere.
+func LoadEffectiveManifest(projectDir string) (Manifest, error) {
+	manifest, err := LoadManifest(projectDir)
+	if err != nil {
+		return Manifest{}, err
+	}
+	fragments, err := LoadFragments(projectDir)
+	if err != nil {
+		return Manifest{}, err
+	}
+	merged, err := MergeManifests(manifest, fragments...)
+	if err != nil {
+		return Manifest{}, err
+	}
+	if err := ValidateManifest(merged); err != nil {
+		return Manifest{}, err
+	}
+	return merged, nil
+}
+
 func SaveManifest(projectDir string, manifest Manifest) error {
 	return SaveManifestAt(ManifestPath(projectDir), manifest)
 }
