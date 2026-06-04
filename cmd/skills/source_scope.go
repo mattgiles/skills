@@ -46,7 +46,19 @@ func resolveSourceManifestTarget(ctx context.Context, global bool) (sourceManife
 		}, nil
 	}
 
-	manifest, err := project.LoadManifest(target.ProjectRoot)
+	// Read the effective manifest (main + fragments) so every consumer of
+	// target.Manifest (add idempotency, source ref inference, source/skill
+	// listing) sees fragment-declared sources and skills. Writes still target
+	// the main manifest via ManifestPath below.
+	//
+	// Edge case: `skills add <src> <name>` where <src> exists only in a
+	// fragment and the skill is new appends the skill to the main manifest
+	// while the source lives in the fragment. The main manifest alone would
+	// then reference an unknown source, but the effective merge (and thus
+	// sync/status) stays valid because the fragment supplies the source. This
+	// matches the intent that fragment-only sources are usable; no extra
+	// handling is required.
+	manifest, err := project.LoadEffectiveManifest(target.ProjectRoot)
 	if err != nil {
 		return sourceManifestTarget{}, err
 	}

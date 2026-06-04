@@ -31,6 +31,26 @@ func loadWorkspaceInputs(ws workspace) (Manifest, State, map[string]*resolvedSou
 		return Manifest{}, State{}, nil, err
 	}
 
+	// Manifest fragments live only under the project workspace's
+	// `.agents/manifest.d/`. ManifestPath() always appends
+	// `.agents/manifest.yaml`, so LoadEffectiveManifest(ws.RootDir) would be
+	// wrong for the home workspace (its manifest is RootDir/manifest.yaml).
+	// Gate the fragment merge to the project workspace; home scope has no
+	// fragments by design.
+	if ws.Name == projectWorkspaceName {
+		fragments, err := LoadFragments(ws.RootDir)
+		if err != nil {
+			return Manifest{}, State{}, nil, err
+		}
+		manifest, err = MergeManifests(manifest, fragments...)
+		if err != nil {
+			return Manifest{}, State{}, nil, err
+		}
+		if err := ValidateManifest(manifest); err != nil {
+			return Manifest{}, State{}, nil, err
+		}
+	}
+
 	state, err := LoadStateAt(ws.StatePath)
 	if err != nil {
 		return Manifest{}, State{}, nil, err

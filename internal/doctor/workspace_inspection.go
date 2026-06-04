@@ -49,7 +49,37 @@ func inspectProjectWorkspace(ctx context.Context, cwd string, gitAvailable bool)
 		return scopeInspection{target: cwd, findings: findings}
 	}
 
-	findings = append(findings, declaredWorkspaceFindings(inputInspection.manifest, manifestPath, "project")...)
+	fragments, err := project.LoadFragments(cwd)
+	if err != nil {
+		findings = append(findings, Finding{
+			Section:  SectionWorkspace,
+			Severity: SeverityError,
+			Code:     "fragment-parse-failed",
+			Subject:  project.FragmentDirPath(cwd),
+			Message:  err.Error(),
+			Hint:     "fix the offending file in .agents/manifest.d/",
+			Path:     project.FragmentDirPath(cwd),
+		})
+		findings = addSkippedSections(findings, "manifest fragment could not be parsed")
+		return scopeInspection{target: cwd, findings: findings}
+	}
+
+	merged, err := project.MergeManifests(inputInspection.manifest, fragments...)
+	if err != nil {
+		findings = append(findings, Finding{
+			Section:  SectionWorkspace,
+			Severity: SeverityError,
+			Code:     "fragment-merge-conflict",
+			Subject:  project.FragmentDirPath(cwd),
+			Message:  err.Error(),
+			Hint:     "resolve the duplicate source alias in .agents/manifest.d/",
+			Path:     project.FragmentDirPath(cwd),
+		})
+		findings = addSkippedSections(findings, "manifest fragments could not be merged")
+		return scopeInspection{target: cwd, findings: findings}
+	}
+
+	findings = append(findings, declaredWorkspaceFindings(merged, manifestPath, "project")...)
 	if !gitAvailable {
 		findings = addSkippedSections(findings, "git is not available")
 		return scopeInspection{target: cwd, findings: findings}
