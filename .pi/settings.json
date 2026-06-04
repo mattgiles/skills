@@ -1,0 +1,8 @@
+{
+  "packages": [
+    "npm:@perk/pi@0.0.1",
+    "npm:@tombell/pi-diff",
+    "npm:@tombell/pi-status",
+    "npm:pi-subagents"
+  ]
+}
