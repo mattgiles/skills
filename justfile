@@ -20,6 +20,10 @@ tidy:
 test:
     go test ./...
 
+# Test changelog section extraction used by the release workflow.
+release-notes-test:
+    sh scripts/release-notes_test.sh
+
 # Update local markdown snapshots for CLI output tests.
 snapshot:
     go test ./cmd/skills -run TestMarkdownSnapshots
@@ -29,7 +33,7 @@ snapshot-live:
     RUN_LIVE_SNAPSHOT_TESTS=1 go test ./cmd/skills -run TestMarkdownSnapshots
 
 # Run formatting and tests.
-check: fmt-check test
+check: fmt-check release-notes-test test
 
 # Build the skills CLI.
 build:

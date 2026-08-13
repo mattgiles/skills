@@ -33,7 +33,7 @@ require_main_branch() {
 }
 
 require_origin_main_upstream() {
-  upstream="$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || true)"
+  upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
   [ "$upstream" = "origin/main" ] || fail "release requires upstream \"origin/main\"; current upstream is \"${upstream:-<none>}\""
 }
 
@@ -83,12 +83,9 @@ next_release_tag() {
   fi
 
   version="${latest_tag#v}"
-  old_ifs="${IFS}"
-  IFS=.
-  set -- $version
-  IFS="${old_ifs}"
-  major="$1"
-  minor="$2"
+  major="${version%%.*}"
+  remainder="${version#*.}"
+  minor="${remainder%%.*}"
 
   case "$bump_type" in
     minor) printf 'v%s.%s.0\n' "$major" "$((minor + 1))" ;;
@@ -100,6 +97,19 @@ require_missing_tag() {
   tag="$1"
   if git show-ref --verify --quiet "refs/tags/$tag"; then
     fail "tag \"$tag\" already exists"
+  fi
+}
+
+require_release_notes() {
+  tag="$1"
+  script_dir="$(
+    CDPATH=''
+    cd -- "$(dirname "$0")"
+    pwd
+  )"
+  repo_root="$(git rev-parse --show-toplevel)"
+  if ! sh "$script_dir/release-notes.sh" "$tag" "$repo_root/CHANGELOG.md" >/dev/null; then
+    fail "release notes are not ready for $tag"
   fi
 }
 
@@ -130,6 +140,7 @@ main() {
   latest_tag="$(latest_release_tag || true)"
   next_tag="$(next_release_tag "$bump" "$latest_tag")"
   require_missing_tag "$next_tag"
+  require_release_notes "$next_tag"
 
   printf 'latest tag: %s\n' "${latest_tag:-<none>}"
   printf 'bump: %s\n' "$bump"

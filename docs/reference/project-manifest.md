@@ -60,6 +60,36 @@ Validation rules:
 - the same `(source, name)` pair cannot appear more than once
 - each skill must reference a declared source
 
+## Project Manifest Fragments
+
+Project workspaces may also contain committed manifest fragments:
+
+```text
+.agents/manifest.d/*.yaml
+```
+
+Fragments use the same `sources` and `skills` schema as the main manifest. The
+CLI reads `.agents/manifest.yaml` first, then merges fragment files in
+lexicographic filename order. Directories and files without the lowercase
+`.yaml` suffix are ignored.
+
+Merge rules:
+
+- every source alias must be declared exactly once across the main manifest and
+  all fragments
+- a fragment skill may reference a source declared in the main manifest or in
+  another fragment
+- repeated `(source, name)` skill pairs are deduplicated; the first declaration
+  wins, with the main manifest taking precedence over fragments
+- the final merged manifest must satisfy all normal validation rules
+
+Commands such as `status`, `sync`, `update`, `source list`, `skill list`, and
+`doctor` read the merged effective manifest. Commands that add sources or skills
+still write only to `.agents/manifest.yaml`.
+
+Manifest fragments are supported only for project workspaces. The home/global
+manifest at `~/.agents/manifest.yaml` has no fragment directory.
+
 ## Default Manifest
 
 `skills init` and `skills init --global` currently create:

@@ -29,7 +29,7 @@ checksum:
   name_template: "skills_checksums.txt"
 
 changelog:
-  disable: true
+  disable: false
 
 release:
   github:

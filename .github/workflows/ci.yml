@@ -12,6 +12,9 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
+      - name: Test release notes extraction
+        run: sh scripts/release-notes_test.sh
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
