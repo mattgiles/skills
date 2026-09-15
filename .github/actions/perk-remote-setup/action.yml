@@ -1,0 +1,46 @@
+# Managed by `perk init` (repaired by `perk doctor --fix`) — do not edit by hand.
+# The composite setup for a perk remote drive: install the two pinned
+# toolchains, then perk (the exterior CLI) + pi (the interior the Node worker drives) + the
+# `skills` CLI (the canonical `.agents/skills/` delivery path — positioning syncs with it) + the
+# Node deps `extension/workerMain.ts` resolves its peer packages from.
+name: perk-remote-setup
+description: "Install perk + pi and the Node worker deps for a headless remote drive."
+runs:
+  using: composite
+  steps:
+    - name: Set up uv (+ Python 3.13)
+      uses: astral-sh/setup-uv@v5
+      with:
+        python-version: "3.13"
+
+    - name: Set up Node 22
+      uses: actions/setup-node@v4
+      with:
+        node-version: "22"
+
+    - name: Install perk
+      shell: bash
+      run: uv tool install perk==3.3.0
+
+    - name: Install pi
+      shell: bash
+      run: npm install -g @earendil-works/pi-coding-agent
+
+    # The skills CLI's release binaries are darwin-only, so the Linux runner builds from source
+    # (pure Go; the preinstalled Go's GOTOOLCHAIN=auto fetches the required toolchain). Fatal on
+    # purpose: no skills, no drive (`run_worker.position_worktree` syncs with this CLI).
+    - name: Install skills CLI
+      shell: bash
+      run: |
+        go install github.com/mattgiles/skills/cmd/skills@latest
+        echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+    - name: Install Node worker deps
+      shell: bash
+      run: npm install @mgiles/perk@3.3.0 @earendil-works/pi-coding-agent --prefix .pi/npm --legacy-peer-deps
+
+    - name: Configure git identity
+      shell: bash
+      run: |
+        git config --global user.name "perk[bot]"
+        git config --global user.email "perk[bot]@users.noreply.github.com"

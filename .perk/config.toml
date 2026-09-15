@@ -1,0 +1,53 @@
+[pi]
+agent_dir = ".pi/agent"
+
+[worktree]
+root = ".worktrees"
+# setup = ["uv sync --all-packages"]
+
+[providers]
+footer = "perk-footer"
+plan = "plannotator-plan"
+
+[models.subagents]
+pr-reviewer = "openai/gpt-5.6-sol"
+review-classifier = "openai/gpt-5.6-terra"
+objective-explorer = "openai/gpt-5.6-terra"
+conflict-resolver = "openai/gpt-5.6-terra"
+learn-analyst = "openai/gpt-5.6-terra"
+adversarial-reviewer = "openai/gpt-5.6-sol"
+review-angle-selector = "openai/gpt-5.6-terra"
+
+[skills.stages]
+ast-grep = ["plan", "objective-plan", "objective-author", "implement", "address", "learn"]
+ruff = ["implement", "address"]
+ty = ["implement", "address"]
+uv = ["implement", "address"]
+dignified-python = ["plan", "objective-plan", "implement", "address"]
+codebase-design = ["plan", "objective-plan", "objective-author"]
+domain-modeling = ["plan", "objective-plan", "objective-author"]
+grill-with-docs = ["plan", "objective-plan", "objective-author"]
+
+[ci]
+# This is our own repo — run the [[ci.checks]] below without a per-session confirm.
+trusted = true
+
+# [[ci.checks]]
+# name = "fmt-py"
+# command = "just fmt-check"
+# glob = "*.py"
+
+# [[ci.checks]]
+# name = "lint-py"
+# command = "just lint"
+# glob = "*.py"
+
+# [[ci.checks]]
+# name = "typecheck-py"
+# command = "just typecheck"
+# glob = "*.py"
+
+# [[ci.checks]]
+# name = "test-py"
+# command = "just test"
+# glob = "*.py"
