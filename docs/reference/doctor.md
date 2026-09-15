@@ -84,6 +84,27 @@ Skipped checks:
 
 - `not-checked`
 
+### `ambiguous-skill` hint
+
+When several in-scope directories share the declared skill name, the finding's
+message lists the candidate repo-relative paths and the hint reads:
+
+```text
+run skills add [--global] <source> <name> --path <candidate> with one of the listed paths, or scope the source with include:/exclude:
+```
+
+Either pin the entry to one path with `skills add --path`, or narrow the
+source's discovery scope with `include`/`exclude` (see
+[Project Manifest](project-manifest.md)).
+
+### `missing-skill` message
+
+The finding reuses the link message from `status`: `no skill directory at
+path "..."`, `skill path "..." is excluded by the source's include/exclude
+scope`, or `skill directory exists only outside the source's include/exclude
+scope: ...`. Without a more specific reason it falls back to `declared skill
+name was not found in the source`.
+
 ## Verbose Output
 
 ```bash

@@ -22,6 +22,25 @@ If a source repo has `SKILL.md` at its root, `skill list` reports that as a vali
 skills skill list --source repo-one
 ```
 
+## See Skills Hidden By A Source Scope
+
+When a source declares `include`/`exclude` in the manifest, `skill list` only
+shows in-scope skills. Add `--all` to list every discovered skill with a
+`Scope` column:
+
+```bash
+skills skill list --source repo-one --all
+```
+
+```text
+Source    Name     Path               Scope
+repo-one  bedrock  plugins/x/bedrock  excluded
+repo-one  bedrock  skills/bedrock     included
+```
+
+The `Path` column is the value to use for `skills add --path` or for a source's
+`include`/`exclude` entries.
+
 ## List Global Sources Instead
 
 ```bash
