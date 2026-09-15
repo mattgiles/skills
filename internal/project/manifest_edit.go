@@ -122,6 +122,62 @@ func AppendManifestSkillAt(path string, skill ManifestSkill) error {
 	return yamlx.WriteASTFile(path, file)
 }
 
+// SetManifestSkillPathAt sets (or replaces) the `path:` selector on the skill
+// entry identified by (source, name), preserving comments and formatting in
+// the rest of the file. It fails when no such entry exists.
+func SetManifestSkillPathAt(path string, source string, name string, skillPath string) error {
+	file, _, err := yamlx.ParseFile(path)
+	if err != nil {
+		return err
+	}
+
+	root, err := yamlx.RootMapping(file)
+	if err != nil {
+		return err
+	}
+
+	value := yamlx.FindMappingValue(root, "skills")
+	if value == nil {
+		return fmt.Errorf("skill %s/%s not found in manifest", source, name)
+	}
+	seq, err := ensureSkillSequence(value)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range seq.Values {
+		mapping, ok := entry.(*ast.MappingNode)
+		if !ok {
+			continue
+		}
+		if !skillEntryMatches(mapping, source, name) {
+			continue
+		}
+
+		update, err := yamlx.ParseMapping(fmt.Sprintf("path: %q\n", skillPath))
+		if err != nil {
+			return err
+		}
+		if existing := yamlx.FindMappingValue(mapping, "path"); existing != nil {
+			existing.Value = update.Values[0].Value
+		} else {
+			mapping.Merge(update)
+		}
+		return yamlx.WriteASTFile(path, file)
+	}
+
+	return fmt.Errorf("skill %s/%s not found in manifest", source, name)
+}
+
+func skillEntryMatches(mapping *ast.MappingNode, source string, name string) bool {
+	sourceValue := yamlx.FindMappingValue(mapping, "source")
+	nameValue := yamlx.FindMappingValue(mapping, "name")
+	if sourceValue == nil || nameValue == nil {
+		return false
+	}
+	return yamlx.ScalarString(sourceValue.Value) == source && yamlx.ScalarString(nameValue.Value) == name
+}
+
 func ensureSourceMapping(value *ast.MappingValueNode) (*ast.MappingNode, error) {
 	if value.Value == nil {
 		update, err := yamlx.ParseMapping("{}")
@@ -183,21 +239,43 @@ func manifestSourceSnippet(alias string, source ManifestSource, flowStyle bool) 
 		return snippet, nil
 	}
 
-	flow := fmt.Sprintf("%s: {url: %q, ref: %q}\n", alias, source.URL, source.Ref)
-	if strings.TrimSpace(source.URL) == "" {
-		flow = fmt.Sprintf("%s: {ref: %q}\n", alias, source.Ref)
+	fields := make([]string, 0, 4)
+	if strings.TrimSpace(source.URL) != "" {
+		fields = append(fields, fmt.Sprintf("url: %q", source.URL))
 	}
-	return flow, nil
+	fields = append(fields, fmt.Sprintf("ref: %q", source.Ref))
+	if len(source.Include) > 0 {
+		fields = append(fields, "include: "+flowStringList(source.Include))
+	}
+	if len(source.Exclude) > 0 {
+		fields = append(fields, "exclude: "+flowStringList(source.Exclude))
+	}
+	return fmt.Sprintf("%s: {%s}\n", alias, strings.Join(fields, ", ")), nil
+}
+
+func flowStringList(values []string) string {
+	quoted := make([]string, 0, len(values))
+	for _, value := range values {
+		quoted = append(quoted, fmt.Sprintf("%q", value))
+	}
+	return "[" + strings.Join(quoted, ", ") + "]"
 }
 
 func skillSnippet(skill ManifestSkill, flowStyle bool) string {
 	if flowStyle {
+		if skill.Path != "" {
+			return fmt.Sprintf("[{source: %q, name: %q, path: %q}]\n", skill.Source, skill.Name, skill.Path)
+		}
 		return fmt.Sprintf("[{source: %q, name: %q}]\n", skill.Source, skill.Name)
 	}
 
 	data, err := yamlx.Marshal([]ManifestSkill{skill})
 	if err != nil {
-		return fmt.Sprintf("- source: %q\n  name: %q\n", skill.Source, skill.Name)
+		fallback := fmt.Sprintf("- source: %q\n  name: %q\n", skill.Source, skill.Name)
+		if skill.Path != "" {
+			fallback += fmt.Sprintf("  path: %q\n", skill.Path)
+		}
+		return fallback
 	}
 	return string(data)
 }

@@ -147,6 +147,122 @@ func TestDiscoverUsesRepoBasenameForRootSkill(t *testing.T) {
 	}
 }
 
+func TestNormalizeSkillPath(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"", ""},
+		{"   ", ""},
+		{"a/x", "a/x"},
+		{"a/x/", "a/x"},
+		{"./a/x", "a/x"},
+		{"a//x", "a/x"},
+		{"a/x/SKILL.md", "a/x"},
+		{"SKILL.md", "."},
+		{".", "."},
+		{"./", "."},
+		{"  a/x  ", "a/x"},
+		{"a/./x/../y", "a/y"},
+		{"..", ".."},
+		{"../x", "../x"},
+	}
+	for _, tc := range cases {
+		if got := NormalizeSkillPath(tc.in); got != tc.want {
+			t.Errorf("NormalizeSkillPath(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestScopeAllows(t *testing.T) {
+	cases := []struct {
+		name  string
+		scope Scope
+		path  string
+		want  bool
+	}{
+		{"zero scope allows everything", Scope{}, "a/x", true},
+		{"zero scope allows root", Scope{}, ".", true},
+		{"include only: inside", Scope{Include: []string{"skills"}}, "skills/x", true},
+		{"include only: exact", Scope{Include: []string{"skills"}}, "skills", true},
+		{"include only: outside", Scope{Include: []string{"skills"}}, "plugins/x", false},
+		{"include only: sibling prefix does not match", Scope{Include: []string{"a"}}, "ab/x", false},
+		{"include only: root not under include", Scope{Include: []string{"skills"}}, ".", false},
+		{"include dot allows everything", Scope{Include: []string{"."}}, "plugins/x", true},
+		{"include dot allows root", Scope{Include: []string{"."}}, ".", true},
+		{"exclude only: inside", Scope{Exclude: []string{"plugins"}}, "plugins/x", false},
+		{"exclude only: exact", Scope{Exclude: []string{"plugins"}}, "plugins", false},
+		{"exclude only: outside", Scope{Exclude: []string{"plugins"}}, "skills/x", true},
+		{"exclude only: sibling prefix does not match", Scope{Exclude: []string{"a"}}, "ab/x", true},
+		{"both: included and not excluded", Scope{Include: []string{"plugins"}, Exclude: []string{"plugins/x"}}, "plugins/y/z", true},
+		{"both: exclude wins", Scope{Include: []string{"plugins"}, Exclude: []string{"plugins/x"}}, "plugins/x/z", false},
+		{"both: outside include", Scope{Include: []string{"plugins"}, Exclude: []string{"plugins/x"}}, "skills/z", false},
+		{"normalizes prefix trailing slash", Scope{Include: []string{"skills/"}}, "skills/x", true},
+		{"normalizes prefix leading dot slash", Scope{Exclude: []string{"./plugins"}}, "plugins/x", false},
+		{"empty prefix ignored", Scope{Include: []string{""}}, "a/x", false},
+	}
+	for _, tc := range cases {
+		if got := tc.scope.Allows(tc.path); got != tc.want {
+			t.Errorf("%s: Scope%+v.Allows(%q) = %v, want %v", tc.name, tc.scope, tc.path, got, tc.want)
+		}
+	}
+}
+
+func TestScopeIsZero(t *testing.T) {
+	if !(Scope{}).IsZero() {
+		t.Fatal("empty Scope should be zero")
+	}
+	if (Scope{Include: []string{"a"}}).IsZero() {
+		t.Fatal("Scope with include should not be zero")
+	}
+	if (Scope{Exclude: []string{"a"}}).IsZero() {
+		t.Fatal("Scope with exclude should not be zero")
+	}
+}
+
+func TestFilterScopePreservesOrder(t *testing.T) {
+	skills := []DiscoveredSkill{
+		{Name: "bedrock", RelativePath: "plugins/x/bedrock"},
+		{Name: "bedrock", RelativePath: "skills/bedrock"},
+		{Name: "lambda", RelativePath: "plugins/x/lambda"},
+		{Name: "root", RelativePath: "."},
+		{Name: "s3", RelativePath: "skills/s3"},
+	}
+
+	kept, excluded := FilterScope(skills, Scope{Exclude: []string{"plugins"}})
+
+	wantKept := []string{"skills/bedrock", ".", "skills/s3"}
+	wantExcluded := []string{"plugins/x/bedrock", "plugins/x/lambda"}
+	assertRelativePaths(t, "kept", kept, wantKept)
+	assertRelativePaths(t, "excluded", excluded, wantExcluded)
+
+	kept, excluded = FilterScope(skills, Scope{Include: []string{"skills"}})
+	assertRelativePaths(t, "kept", kept, []string{"skills/bedrock", "skills/s3"})
+	assertRelativePaths(t, "excluded", excluded, []string{"plugins/x/bedrock", "plugins/x/lambda", "."})
+
+	kept, excluded = FilterScope(skills, Scope{})
+	if len(kept) != len(skills) || len(excluded) != 0 {
+		t.Fatalf("zero scope: kept=%d excluded=%d, want %d/0", len(kept), len(excluded), len(skills))
+	}
+
+	kept, excluded = FilterScope(skills, Scope{Include: []string{"."}})
+	if len(kept) != len(skills) || len(excluded) != 0 {
+		t.Fatalf("include \".\": kept=%d excluded=%d, want %d/0", len(kept), len(excluded), len(skills))
+	}
+}
+
+func assertRelativePaths(t *testing.T, label string, skills []DiscoveredSkill, want []string) {
+	t.Helper()
+	if len(skills) != len(want) {
+		t.Fatalf("%s: len = %d, want %d (%+v)", label, len(skills), len(want), skills)
+	}
+	for i, skill := range skills {
+		if skill.RelativePath != want[i] {
+			t.Fatalf("%s[%d] = %q, want %q", label, i, skill.RelativePath, want[i])
+		}
+	}
+}
+
 func mustWriteFile(t *testing.T, path string, contents string) {
 	t.Helper()
 

@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"io/fs"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -170,4 +171,86 @@ func DiscoverFromPaths(sourceAlias string, repoPath string, paths []string, root
 func isRepoRootPath(relativePath string) bool {
 	relativePath = filepath.Clean(strings.TrimSpace(relativePath))
 	return relativePath == "." || relativePath == ""
+}
+
+// NormalizeSkillPath canonicalizes a repo-relative skill directory path so
+// that manifest selectors and scope entries compare exactly against discovery
+// results. It trims whitespace, converts separators to forward slashes,
+// cleans the path, and drops a trailing SKILL.md element (so a copied file
+// path selects its directory). Empty input yields ""; a repo-root skill
+// normalizes to ".".
+func NormalizeSkillPath(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	p = path.Clean(filepath.ToSlash(p))
+	if path.Base(p) == "SKILL.md" {
+		p = path.Dir(p)
+	}
+	return p
+}
+
+// Scope restricts discovery results to repo-relative directory prefixes.
+// A skill is kept iff it lies under an Include entry (or Include is empty)
+// and not under any Exclude entry. Exclude wins.
+type Scope struct {
+	Include []string
+	Exclude []string
+}
+
+// IsZero reports whether the scope has no include or exclude entries.
+func (s Scope) IsZero() bool {
+	return len(s.Include) == 0 && len(s.Exclude) == 0
+}
+
+// Allows reports whether a skill at relativePath falls inside the scope.
+func (s Scope) Allows(relativePath string) bool {
+	rel := NormalizeSkillPath(relativePath)
+	if rel == "" {
+		rel = "."
+	}
+
+	for _, prefix := range s.Exclude {
+		if underPrefix(rel, prefix) {
+			return false
+		}
+	}
+	if len(s.Include) == 0 {
+		return true
+	}
+	for _, prefix := range s.Include {
+		if underPrefix(rel, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// underPrefix reports whether the normalized relative path rel lies at or
+// beneath the directory prefix. A "." prefix matches everything.
+func underPrefix(rel string, prefix string) bool {
+	prefix = NormalizeSkillPath(prefix)
+	if prefix == "" {
+		return false
+	}
+	if prefix == "." {
+		return true
+	}
+	return rel == prefix || strings.HasPrefix(rel, prefix+"/")
+}
+
+// FilterScope partitions skills into those kept by scope and those excluded,
+// preserving input order in both slices.
+func FilterScope(skills []DiscoveredSkill, scope Scope) (kept []DiscoveredSkill, excluded []DiscoveredSkill) {
+	kept = make([]DiscoveredSkill, 0, len(skills))
+	excluded = make([]DiscoveredSkill, 0)
+	for _, skill := range skills {
+		if scope.Allows(skill.RelativePath) {
+			kept = append(kept, skill)
+		} else {
+			excluded = append(excluded, skill)
+		}
+	}
+	return kept, excluded
 }

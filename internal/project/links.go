@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+
+	"github.com/mattgiles/skills/internal/discovery"
 )
 
 type desiredLink struct {
@@ -38,26 +41,26 @@ func buildSkillLinkReports(resolvedSources map[string]*resolvedSource, manifest 
 		case strings.TrimSpace(src.InspectError) != "":
 			report.Status = "inspect-failed"
 			report.Message = src.InspectError
+		case strings.TrimSpace(skill.Path) != "":
+			selector := discovery.NormalizeSkillPath(skill.Path)
+			match, ok := src.SkillsByPath[selector]
+			if !ok {
+				report.Status = "missing-skill"
+				report.Message = missingPathMessage(src, skill.Path, selector)
+				break
+			}
+			desired = appendResolvedLink(desired, &report, src, skill, match, stateLinks)
 		default:
 			matches := src.SkillsByName[skill.Name]
 			switch {
 			case len(matches) == 0:
 				report.Status = "missing-skill"
+				report.Message = missingNameMessage(src, skill.Name)
 			case len(matches) > 1:
 				report.Status = "ambiguous-skill"
-				report.Message = "multiple skills share this directory name"
+				report.Message = ambiguousMessage(matches)
 			default:
-				target := skillTargetPath(src.WorktreePath, matches[0].RelativePath)
-				report.Target = target
-				report.Status = currentLinkStatus(report.Path, target, stateLinks)
-				desired = append(desired, desiredLink{
-					ManagedLink: ManagedLink{
-						Path:   report.Path,
-						Target: target,
-						Source: skill.Source,
-						Skill:  skill.Name,
-					},
-				})
+				desired = appendResolvedLink(desired, &report, src, skill, matches[0], stateLinks)
 			}
 		}
 
@@ -66,6 +69,63 @@ func buildSkillLinkReports(resolvedSources map[string]*resolvedSource, manifest 
 
 	sortLinkReports(reports)
 	return desired, reports
+}
+
+// appendResolvedLink fills report.Target/Status for a resolved skill and
+// appends the corresponding desired link. report.Path and the link's Skill
+// label always derive from skill.Name so state and adapters are unaffected
+// by which discovered directory was selected.
+func appendResolvedLink(desired []desiredLink, report *LinkReport, src *resolvedSource, skill ManifestSkill, match discovery.DiscoveredSkill, stateLinks map[string]ManagedLink) []desiredLink {
+	target := skillTargetPath(src.WorktreePath, match.RelativePath)
+	report.Target = target
+	report.Status = currentLinkStatus(report.Path, target, stateLinks)
+	return append(desired, desiredLink{
+		ManagedLink: ManagedLink{
+			Path:   report.Path,
+			Target: target,
+			Source: skill.Source,
+			Skill:  skill.Name,
+		},
+	})
+}
+
+// missingPathMessage explains why a path: selector matched nothing —
+// either the directory was discovered but filtered out by the source scope,
+// or it does not exist at all.
+func missingPathMessage(src *resolvedSource, rawPath string, selector string) string {
+	for _, excluded := range src.ExcludedSkills {
+		if discovery.NormalizeSkillPath(excluded.RelativePath) == selector {
+			return fmt.Sprintf("skill path %q is excluded by the source's include/exclude scope", rawPath)
+		}
+	}
+	return fmt.Sprintf("no skill directory at path %q", rawPath)
+}
+
+// missingNameMessage explains a name-based miss when same-named skills exist
+// only outside the source scope; otherwise it returns "" (unchanged behavior).
+func missingNameMessage(src *resolvedSource, name string) string {
+	paths := make([]string, 0)
+	for _, excluded := range src.ExcludedSkills {
+		if excluded.Name == name {
+			paths = append(paths, filepath.ToSlash(excluded.RelativePath))
+		}
+	}
+	if len(paths) == 0 {
+		return ""
+	}
+	sort.Strings(paths)
+	return "skill directory exists only outside the source's include/exclude scope: " + strings.Join(paths, ", ")
+}
+
+// ambiguousMessage lists the candidate paths for a name shared by several
+// in-scope skills so the user can pick one with path:.
+func ambiguousMessage(matches []discovery.DiscoveredSkill) string {
+	paths := make([]string, 0, len(matches))
+	for _, match := range matches {
+		paths = append(paths, filepath.ToSlash(match.RelativePath))
+	}
+	sort.Strings(paths)
+	return "multiple skills share this directory name; set path: to one of: " + strings.Join(paths, ", ")
 }
 
 func buildClaudeLinkReports(skillLinks []desiredLink, claudeSkillsDir string, stateLinks map[string]ManagedLink) ([]desiredLink, []LinkReport) {

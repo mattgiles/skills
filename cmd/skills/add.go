@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mattgiles/skills/internal/config"
+	"github.com/mattgiles/skills/internal/discovery"
 	"github.com/mattgiles/skills/internal/project"
 	"github.com/mattgiles/skills/internal/source"
 	"github.com/mattgiles/skills/internal/ui"
@@ -17,8 +18,14 @@ import (
 type addSkillChange struct {
 	AddedSource bool
 	AddedSkill  bool
+	// UpdatedPath is set when an already-declared (source, name) entry had
+	// its path: selector changed instead of a new entry being appended.
+	UpdatedPath bool
 	SourceURL   string
 	SourceRef   string
+	// SkillPath is the normalized path: selector written for the entry (""
+	// when none).
+	SkillPath string
 }
 
 type addSyncOutcome struct {
@@ -30,6 +37,7 @@ func newAddCommand() *cobra.Command {
 	var global bool
 	var url string
 	var ref string
+	var skillPath string
 
 	cmd := &cobra.Command{
 		Use:   "add <source> <skill>",
@@ -61,20 +69,27 @@ func newAddCommand() *cobra.Command {
 				return err
 			}
 
-			_, change, err := applySkillAdd(
+			nextManifest, change, err := applySkillAdd(
 				cmd.Context(),
 				target.Manifest,
 				sourceAlias,
 				skillName,
 				strings.TrimSpace(url),
 				strings.TrimSpace(ref),
+				discovery.NormalizeSkillPath(skillPath),
 			)
 			if err != nil {
 				return err
 			}
-			if !change.AddedSkill {
+			if !change.AddedSkill && !change.UpdatedPath {
 				view.Infof("skill %q from source %q is already declared", skillName, sourceAlias)
 				return nil
+			}
+			// Validate the would-be manifest before touching the file so that
+			// static problems (absolute/escaping path, duplicate path) fail
+			// fast without a write + rollback cycle.
+			if err := project.ValidateManifest(nextManifest); err != nil {
+				return err
 			}
 
 			if change.AddedSource {
@@ -85,11 +100,19 @@ func newAddCommand() *cobra.Command {
 					return err
 				}
 			}
-			if err := project.AppendManifestSkillAt(target.ManifestPath, project.ManifestSkill{
-				Source: sourceAlias,
-				Name:   skillName,
-			}); err != nil {
-				return err
+			switch {
+			case change.AddedSkill:
+				if err := project.AppendManifestSkillAt(target.ManifestPath, project.ManifestSkill{
+					Source: sourceAlias,
+					Name:   skillName,
+					Path:   change.SkillPath,
+				}); err != nil {
+					return err
+				}
+			case change.UpdatedPath:
+				if err := project.SetManifestSkillPathAt(target.ManifestPath, sourceAlias, skillName, change.SkillPath); err != nil {
+					return err
+				}
 			}
 
 			outcome, err := runAddSync(cmd, target, sourceAlias)
@@ -103,7 +126,14 @@ func newAddCommand() *cobra.Command {
 			if change.AddedSource {
 				view.Successf("added source %q (%s @ %s)", sourceAlias, change.SourceURL, change.SourceRef)
 			}
-			view.Successf("added skill %q from source %q", skillName, sourceAlias)
+			switch {
+			case change.UpdatedPath:
+				view.Successf("updated path for skill %q from source %q to %s", skillName, sourceAlias, change.SkillPath)
+			case change.SkillPath != "":
+				view.Successf("added skill %q from source %q (path %s)", skillName, sourceAlias, change.SkillPath)
+			default:
+				view.Successf("added skill %q from source %q", skillName, sourceAlias)
+			}
 			view.Blank()
 			renderWorkspaceSummary(cmd, outcome.summary, verboseEnabled(cmd))
 			renderWorkspaceSync(cmd, outcome.result, verboseEnabled(cmd))
@@ -114,23 +144,36 @@ func newAddCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&global, "global", false, "Operate on shared home/global installs")
 	cmd.Flags().StringVar(&url, "url", "", "Source Git URL or local repo path for a new source")
 	cmd.Flags().StringVar(&ref, "ref", "", "Source ref for a new source; defaults to the remote's default branch")
+	cmd.Flags().StringVar(&skillPath, "path", "", "Repo-relative skill directory to select when multiple skills share a name (name stays the link directory)")
 	return cmd
 }
 
-func applySkillAdd(ctx context.Context, manifest project.Manifest, sourceAlias string, skillName string, url string, ref string) (project.Manifest, addSkillChange, error) {
+// applySkillAdd computes the manifest change for `skills add`. skillPath is
+// the already-normalized path: selector ("" for none). For an existing
+// (source, name) entry: no path or an equal path is a no-op; a differing path
+// updates the selector in place. Otherwise a new entry is appended.
+func applySkillAdd(ctx context.Context, manifest project.Manifest, sourceAlias string, skillName string, url string, ref string, skillPath string) (project.Manifest, addSkillChange, error) {
 	nextManifest := cloneManifest(manifest)
-	change := addSkillChange{}
+	change := addSkillChange{SkillPath: skillPath}
 
 	if existing, ok := nextManifest.Sources[sourceAlias]; ok {
 		change.SourceURL = existing.URL
 		change.SourceRef = existing.Ref
-		if manifestHasSkill(nextManifest, sourceAlias, skillName) {
+		if idx := manifestSkillIndex(nextManifest, sourceAlias, skillName); idx >= 0 {
+			current := discovery.NormalizeSkillPath(nextManifest.Skills[idx].Path)
+			if skillPath == "" || current == skillPath {
+				change.SkillPath = current
+				return nextManifest, change, nil
+			}
+			nextManifest.Skills[idx].Path = skillPath
+			change.UpdatedPath = true
 			return nextManifest, change, nil
 		}
 
 		nextManifest.Skills = append(nextManifest.Skills, project.ManifestSkill{
 			Source: sourceAlias,
 			Name:   skillName,
+			Path:   skillPath,
 		})
 		change.AddedSkill = true
 		return nextManifest, change, nil
@@ -156,6 +199,7 @@ func applySkillAdd(ctx context.Context, manifest project.Manifest, sourceAlias s
 	nextManifest.Skills = append(nextManifest.Skills, project.ManifestSkill{
 		Source: sourceAlias,
 		Name:   skillName,
+		Path:   skillPath,
 	})
 
 	change.AddedSource = true
@@ -176,13 +220,15 @@ func cloneManifest(manifest project.Manifest) project.Manifest {
 	return nextManifest
 }
 
-func manifestHasSkill(manifest project.Manifest, sourceAlias string, skillName string) bool {
-	for _, skill := range manifest.Skills {
+// manifestSkillIndex returns the index of the (source, name) entry in
+// manifest.Skills, or -1 when absent.
+func manifestSkillIndex(manifest project.Manifest, sourceAlias string, skillName string) int {
+	for i, skill := range manifest.Skills {
 		if skill.Source == sourceAlias && skill.Name == skillName {
-			return true
+			return i
 		}
 	}
-	return false
+	return -1
 }
 
 func restoreManifestBytes(path string, data []byte) error {

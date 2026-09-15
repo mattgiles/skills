@@ -199,7 +199,7 @@ func linkFinding(section string, link project.LinkReport, scope Scope) []Finding
 			Severity: SeverityError,
 			Code:     link.Status,
 			Subject:  subject,
-			Message:  "declared skill name was not found in the source",
+			Message:  firstNonEmpty(link.Message, "declared skill name was not found in the source"),
 			Hint:     "run skills skill list --source " + link.Source + " and update the manifest",
 			Path:     link.Path,
 		}}
@@ -210,7 +210,7 @@ func linkFinding(section string, link project.LinkReport, scope Scope) []Finding
 			Code:     link.Status,
 			Subject:  subject,
 			Message:  firstNonEmpty(link.Message, "multiple skills share this directory name"),
-			Hint:     "rename one of the duplicate skill directories upstream or choose another source",
+			Hint:     "run " + addCommand(scope, link.Source, link.Skill) + " with one of the listed paths, or scope the source with include:/exclude:",
 			Path:     link.Path,
 		}}
 	default:
@@ -227,6 +227,15 @@ func syncCommand(scope Scope) string {
 
 func syncHint(scope Scope) string {
 	return "run " + syncCommand(scope)
+}
+
+// addCommand renders the `skills add` invocation that pins a skill entry to
+// one discovered path, honoring the doctor scope's --global flag.
+func addCommand(scope Scope, source string, skill string) string {
+	if scope == ScopeGlobal {
+		return "skills add --global " + source + " " + skill + " --path <candidate>"
+	}
+	return "skills add " + source + " " + skill + " --path <candidate>"
 }
 
 func updateHint(scope Scope) string {

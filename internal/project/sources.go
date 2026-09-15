@@ -22,7 +22,29 @@ type resolvedSource struct {
 	DesiredCommit string
 	WorktreePath  string
 	InspectError  string
-	SkillsByName  map[string][]discovery.DiscoveredSkill
+
+	// Scope is the source's include/exclude discovery filter from the manifest.
+	Scope discovery.Scope
+	// SkillsByName indexes in-scope discovered skills by directory name.
+	SkillsByName map[string][]discovery.DiscoveredSkill
+	// SkillsByPath indexes in-scope discovered skills by normalized
+	// repo-relative path (see discovery.NormalizeSkillPath).
+	SkillsByPath map[string]discovery.DiscoveredSkill
+	// ExcludedSkills holds discovered skills that the Scope filtered out.
+	ExcludedSkills []discovery.DiscoveredSkill
+}
+
+// sourceSkills is the scope-partitioned discovery result for one source.
+type sourceSkills struct {
+	ByName   map[string][]discovery.DiscoveredSkill
+	ByPath   map[string]discovery.DiscoveredSkill
+	Excluded []discovery.DiscoveredSkill
+}
+
+func (src *resolvedSource) setSkills(skills sourceSkills) {
+	src.SkillsByName = skills.ByName
+	src.SkillsByPath = skills.ByPath
+	src.ExcludedSkills = skills.Excluded
 }
 
 func loadWorkspaceInputs(ws workspace) (Manifest, State, map[string]*resolvedSource, error) {
@@ -87,6 +109,10 @@ func resolveInputs(ws workspace, manifest Manifest) (map[string]*resolvedSource,
 			RepoPath:     source.RepoPathForURL(ws.RepoRoot, url),
 			WorktreeRoot: ws.WorktreeRoot,
 			WorkspaceID:  workspaceID,
+			Scope: discovery.Scope{
+				Include: manifestSource.Include,
+				Exclude: manifestSource.Exclude,
+			},
 		}
 	}
 
@@ -147,13 +173,13 @@ func resolveSourcesForStatus(ctx context.Context, resolvedSources map[string]*re
 		if status.Exists && status.IsGitRepo && strings.TrimSpace(src.DesiredCommit) != "" {
 			src.WorktreePath = source.WorktreePath(src.WorktreeRoot, src.WorkspaceID, src.Alias, src.DesiredCommit)
 			report.WorktreePath = src.WorktreePath
-			skillsByName, inspectErr := loadSkillsForCommit(ctx, src)
+			skills, inspectErr := loadSkillsForCommit(ctx, src)
 			if inspectErr != nil {
 				src.InspectError = inspectErr.Error()
 				report.Status = "inspect-failed"
 				report.Message = inspectErr.Error()
 			} else {
-				src.SkillsByName = skillsByName
+				src.setSkills(skills)
 			}
 		}
 
@@ -197,13 +223,13 @@ func resolveSourcesForSync(ctx context.Context, resolvedSources map[string]*reso
 		if status.Exists && status.IsGitRepo && strings.TrimSpace(src.DesiredCommit) != "" {
 			src.WorktreePath = source.WorktreePath(src.WorktreeRoot, src.WorkspaceID, src.Alias, src.DesiredCommit)
 			report.WorktreePath = src.WorktreePath
-			skillsByName, inspectErr := loadSkillsForCommit(ctx, src)
+			skills, inspectErr := loadSkillsForCommit(ctx, src)
 			if inspectErr != nil {
 				src.InspectError = inspectErr.Error()
 				report.Status = "inspect-failed"
 				report.Message = inspectErr.Error()
 			} else {
-				src.SkillsByName = skillsByName
+				src.setSkills(skills)
 			}
 			nextStates = append(nextStates, SourceState{
 				Source:         src.Alias,
@@ -334,10 +360,14 @@ func storedCommitExists(ctx context.Context, src *resolvedSource, hasPrev bool, 
 	return err == nil
 }
 
-func loadSkillsForCommit(ctx context.Context, src *resolvedSource) (map[string][]discovery.DiscoveredSkill, error) {
-	skillsByName := map[string][]discovery.DiscoveredSkill{}
+func loadSkillsForCommit(ctx context.Context, src *resolvedSource) (sourceSkills, error) {
+	skills := sourceSkills{
+		ByName:   map[string][]discovery.DiscoveredSkill{},
+		ByPath:   map[string]discovery.DiscoveredSkill{},
+		Excluded: []discovery.DiscoveredSkill{},
+	}
 	if strings.TrimSpace(src.DesiredCommit) == "" {
-		return skillsByName, nil
+		return skills, nil
 	}
 
 	discovered, err := discovery.DiscoverAtCommit(ctx, source.Source{
@@ -346,13 +376,16 @@ func loadSkillsForCommit(ctx context.Context, src *resolvedSource) (map[string][
 		RepoPath: src.RepoPath,
 	}, src.WorktreePath, src.DesiredCommit)
 	if err != nil {
-		return nil, fmt.Errorf("inspect %s at %s: %w", src.Alias, shortCommit(src.DesiredCommit), err)
+		return sourceSkills{}, fmt.Errorf("inspect %s at %s: %w", src.Alias, shortCommit(src.DesiredCommit), err)
 	}
 
-	for _, skill := range discovered {
-		skillsByName[skill.Name] = append(skillsByName[skill.Name], skill)
+	kept, excluded := discovery.FilterScope(discovered, src.Scope)
+	for _, skill := range kept {
+		skills.ByName[skill.Name] = append(skills.ByName[skill.Name], skill)
+		skills.ByPath[discovery.NormalizeSkillPath(skill.RelativePath)] = skill
 	}
-	return skillsByName, nil
+	skills.Excluded = excluded
+	return skills, nil
 }
 
 func resolveSyncSource(ctx context.Context, src *resolvedSource, prev SourceState, hasPrev bool, resolveLatest bool, report *SourceReport) {

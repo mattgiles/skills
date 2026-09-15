@@ -32,11 +32,20 @@ type Manifest struct {
 type ManifestSource struct {
 	URL string `yaml:"url,omitempty"`
 	Ref string `yaml:"ref"`
+	// Include lists repo-relative directory prefixes to search for skills.
+	// When empty, the whole repository is searched.
+	Include []string `yaml:"include,omitempty"`
+	// Exclude lists repo-relative directory prefixes to skip. Exclude wins
+	// over Include.
+	Exclude []string `yaml:"exclude,omitempty"`
 }
 
 type ManifestSkill struct {
 	Source string `yaml:"source"`
 	Name   string `yaml:"name"`
+	// Path optionally selects the discovered skill by its exact repo-relative
+	// directory. When set, Name is only the link/destination directory label.
+	Path string `yaml:"path,omitempty"`
 }
 
 type LocalConfig struct {

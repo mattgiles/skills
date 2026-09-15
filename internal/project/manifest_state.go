@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/mattgiles/skills/internal/config"
+	"github.com/mattgiles/skills/internal/discovery"
 	"github.com/mattgiles/skills/internal/yamlx"
 )
 
@@ -446,9 +447,23 @@ func ValidateManifest(manifest Manifest) error {
 		if strings.TrimSpace(src.Ref) == "" {
 			return fmt.Errorf("source %q is missing ref", alias)
 		}
+		for _, entry := range src.Include {
+			if err := validateRepoRelativeDir("include", alias, entry); err != nil {
+				return err
+			}
+		}
+		for _, entry := range src.Exclude {
+			if err := validateRepoRelativeDir("exclude", alias, entry); err != nil {
+				return err
+			}
+			if discovery.NormalizeSkillPath(entry) == "." {
+				return fmt.Errorf("source %q exclude %q would exclude the whole repository", alias, entry)
+			}
+		}
 	}
 
 	seenSkills := map[string]struct{}{}
+	seenPaths := map[string]string{}
 	for _, skill := range manifest.Skills {
 		if strings.TrimSpace(skill.Source) == "" {
 			return errors.New("skill is missing source")
@@ -465,9 +480,47 @@ func ValidateManifest(manifest Manifest) error {
 			return fmt.Errorf("duplicate skill declaration for %s/%s", skill.Source, skill.Name)
 		}
 		seenSkills[key] = struct{}{}
+
+		if strings.TrimSpace(skill.Path) == "" {
+			continue
+		}
+		if filepath.IsAbs(strings.TrimSpace(skill.Path)) {
+			return fmt.Errorf("skill %q in source %q has an absolute path %q; use a repo-relative path", skill.Name, skill.Source, skill.Path)
+		}
+		normalized := discovery.NormalizeSkillPath(skill.Path)
+		if escapesRepo(normalized) {
+			return fmt.Errorf("skill %q in source %q path %q escapes the repository", skill.Name, skill.Source, skill.Path)
+		}
+		pathKey := skill.Source + "\x00" + normalized
+		if first, ok := seenPaths[pathKey]; ok {
+			return fmt.Errorf("duplicate skill path for %s: %s (declared by %s and %s)", skill.Source, normalized, first, skill.Name)
+		}
+		seenPaths[pathKey] = skill.Name
 	}
 
 	return nil
+}
+
+// validateRepoRelativeDir checks a single source include/exclude entry: it
+// must be non-empty, not absolute, and must not escape the repository.
+func validateRepoRelativeDir(kind string, alias string, entry string) error {
+	trimmed := strings.TrimSpace(entry)
+	if trimmed == "" {
+		return fmt.Errorf("source %q has an empty %s entry", alias, kind)
+	}
+	if filepath.IsAbs(trimmed) {
+		return fmt.Errorf("source %q %s entry %q is absolute; use a repo-relative directory", alias, kind, entry)
+	}
+	if escapesRepo(discovery.NormalizeSkillPath(trimmed)) {
+		return fmt.Errorf("source %q %s entry %q escapes the repository", alias, kind, entry)
+	}
+	return nil
+}
+
+// escapesRepo reports whether a normalized repo-relative path climbs above
+// the repository root.
+func escapesRepo(normalized string) bool {
+	return normalized == ".." || strings.HasPrefix(normalized, "../")
 }
 
 func ProjectID(projectDir string) (string, error) {
