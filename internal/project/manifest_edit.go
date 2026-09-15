@@ -59,11 +59,12 @@ func UpsertManifestSourceAt(path string, alias string, source ManifestSource) er
 		return err
 	}
 
-	if existing := yamlx.FindMappingValue(target, alias); existing != nil {
-		existing.Value = update.Values[0].Value
-	} else {
-		target.Merge(update)
-	}
+	// Merge handles both the new-alias and existing-alias cases: for an
+	// existing key it replaces the value after re-aligning the parsed
+	// snippet's columns to the target mapping, which a bare
+	// `existing.Value = ...` assignment would skip (breaking block-style
+	// indentation on re-registration).
+	target.Merge(update)
 	return yamlx.WriteASTFile(path, file)
 }
 

@@ -106,6 +106,79 @@ func TestMergeManifestsDedupesSkillAcrossBaseAndFragment(t *testing.T) {
 	}
 }
 
+func TestMergeManifestsPreservesScopeAndPath(t *testing.T) {
+	projectDir := resolvedPath(t, t.TempDir())
+	writeMainManifest(t, projectDir, "sources:\n  repo-one:\n    url: https://example.com/one\n    ref: main\nskills: []\n")
+	writeFragment(t, projectDir, "perk.yaml", strings.Join([]string{
+		"sources:",
+		"  repo-two:",
+		"    url: https://example.com/two",
+		"    ref: main",
+		"    include: [skills]",
+		"    exclude: [plugins]",
+		"skills:",
+		"  - source: repo-two",
+		"    name: bedrock",
+		"    path: skills/bedrock",
+		"",
+	}, "\n"))
+
+	effective, err := LoadEffectiveManifest(projectDir)
+	if err != nil {
+		t.Fatalf("LoadEffectiveManifest() error = %v", err)
+	}
+	src, ok := effective.Sources["repo-two"]
+	if !ok {
+		t.Fatalf("expected fragment source repo-two")
+	}
+	if len(src.Include) != 1 || src.Include[0] != "skills" || len(src.Exclude) != 1 || src.Exclude[0] != "plugins" {
+		t.Fatalf("scope lists did not survive merge: %+v", src)
+	}
+	if len(effective.Skills) != 1 || effective.Skills[0].Path != "skills/bedrock" {
+		t.Fatalf("skill path did not survive merge: %+v", effective.Skills)
+	}
+}
+
+func TestMergeManifestsDedupesOnSourceNameEvenWithDifferentPaths(t *testing.T) {
+	base := Manifest{
+		Sources: map[string]ManifestSource{"repo-one": {URL: "https://example.com/one", Ref: "main"}},
+		Skills:  []ManifestSkill{{Source: "repo-one", Name: "bedrock", Path: "skills/bedrock"}},
+	}
+	fragment := Manifest{
+		Skills: []ManifestSkill{{Source: "repo-one", Name: "bedrock", Path: "plugins/x/bedrock"}},
+	}
+
+	merged, err := MergeManifests(base, fragment)
+	if err != nil {
+		t.Fatalf("MergeManifests() error = %v", err)
+	}
+	if len(merged.Skills) != 1 {
+		t.Fatalf("len(Skills) = %d, want 1 (deduped): %+v", len(merged.Skills), merged.Skills)
+	}
+	if merged.Skills[0].Path != "skills/bedrock" {
+		t.Fatalf("first declaration should win, got path %q", merged.Skills[0].Path)
+	}
+}
+
+func TestMergeManifestsRejectsSharedPathUnderDifferentNames(t *testing.T) {
+	base := Manifest{
+		Sources: map[string]ManifestSource{"repo-one": {URL: "https://example.com/one", Ref: "main"}},
+		Skills:  []ManifestSkill{{Source: "repo-one", Name: "bedrock", Path: "skills/bedrock"}},
+	}
+	fragment := Manifest{
+		Skills: []ManifestSkill{{Source: "repo-one", Name: "bedrock-copy", Path: "skills/bedrock/SKILL.md"}},
+	}
+
+	merged, err := MergeManifests(base, fragment)
+	if err != nil {
+		t.Fatalf("MergeManifests() error = %v", err)
+	}
+	err = ValidateManifest(merged)
+	if err == nil || !strings.Contains(err.Error(), "duplicate skill path for repo-one: skills/bedrock") {
+		t.Fatalf("ValidateManifest() error = %v, want duplicate skill path", err)
+	}
+}
+
 func TestMergeManifestsDedupesSkillAcrossFragmentsByFilenameOrder(t *testing.T) {
 	projectDir := resolvedPath(t, t.TempDir())
 	writeMainManifest(t, projectDir, "sources:\n  repo-one:\n    url: https://example.com/one\n    ref: main\nskills: []\n")
