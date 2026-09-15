@@ -32,22 +32,15 @@ grill-with-docs = ["plan", "objective-plan", "objective-author"]
 # This is our own repo — run the [[ci.checks]] below without a per-session confirm.
 trusted = true
 
-# [[ci.checks]]
-# name = "fmt-py"
-# command = "just fmt-check"
-# glob = "*.py"
+[[ci.checks]]
+name = "fmt-go"
+command = "just fmt-check"
+glob = "*.go"
 
-# [[ci.checks]]
-# name = "lint-py"
-# command = "just lint"
-# glob = "*.py"
+[[ci.checks]]
+name = "test-go"
+command = "just test"
 
-# [[ci.checks]]
-# name = "typecheck-py"
-# command = "just typecheck"
-# glob = "*.py"
-
-# [[ci.checks]]
-# name = "test-py"
-# command = "just test"
-# glob = "*.py"
+[[ci.checks]]
+name = "build-go"
+command = "just build"
