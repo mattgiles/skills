@@ -15,6 +15,9 @@
     },
     {
       "source": "npm:pi-web-access"
+    },
+    {
+      "source": "npm:@plannotator/pi-extension"
     }
   ],
   "subagents": {

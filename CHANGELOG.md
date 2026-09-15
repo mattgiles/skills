@@ -4,6 +4,8 @@ All notable changes to `skills` are documented in this file.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-15
+
 ### Added
 
 - Per-source discovery scope: `sources.<alias>.include` and
