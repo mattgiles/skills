@@ -31,8 +31,8 @@ This page documents the current user-visible status vocabulary.
 | `invalid` | Destination path could not be inspected |
 | `unknown-source` | Skill references a source that is not declared |
 | `source-not-ready` | Source has no usable desired commit yet |
-| `missing-skill` | No discovered skill matched the declared name |
-| `ambiguous-skill` | More than one discovered skill matched the declared name |
+| `missing-skill` | No in-scope discovered skill matched the selector. The message distinguishes: the declared `path` does not exist, the declared `path` is excluded by the source's `include`/`exclude` scope, or a same-named directory exists only outside the scope |
+| `ambiguous-skill` | More than one in-scope discovered skill matched the declared name and the entry has no `path`; the message lists the candidate paths |
 | `inspect-failed` | Source inspection failed before link resolution |
 
 ## Claude Adapter Statuses

@@ -114,28 +114,58 @@ Fix:
 
 ## `missing-skill`
 
-Cause:
+Cause (the status message says which):
 
-- the declared skill name does not match any discovered directory name at the resolved commit
+- the declared skill name does not match any in-scope discovered directory name at the resolved commit
+- the declared `path:` does not exist in the source (`no skill directory at path "..."`)
+- the declared `path:` exists but is filtered out by the source's `include`/`exclude` scope (`skill path "..." is excluded by the source's include/exclude scope`)
+- a same-named directory exists only outside the source scope (`skill directory exists only outside the source's include/exclude scope: ...`)
 
 Fix:
 
 ```bash
-skills skill list --source <alias>
+skills skill list --source <alias> --all
 ```
 
-Then update the manifest.
+`--all` shows every discovered skill with a `Scope` column so you can see what
+the source's `include`/`exclude` lists are hiding. Then update the manifest:
+fix the `name`/`path`, or widen the scope with `skills source add <alias> <url>
+--include ... --exclude ...`.
 
 ## `ambiguous-skill`
 
 Cause:
 
-- more than one directory with the same name contains `SKILL.md` in the source repo
+- more than one in-scope directory with the same name contains `SKILL.md` in the source repo, and the manifest entry has no `path:`
 
-Fix:
+The status message lists the candidate paths:
 
-- rename one of the skill directories upstream
-- or choose a source repo that does not contain duplicate directory names
+```text
+multiple skills share this directory name; set path: to one of: plugins/aws-core/skills/amazon-bedrock, skills/core-skills/amazon-bedrock
+```
+
+Fix — pick one of two options:
+
+1. Pin this entry to one candidate path (`name` stays the link directory):
+
+   ```bash
+   skills add <alias> <name> --path skills/core-skills/amazon-bedrock
+   ```
+
+2. Scope the source so only one copy is discovered (fixes every duplicate in
+   the source at once):
+
+   ```bash
+   skills source add <alias> <url> --exclude plugins
+   skills sync
+   ```
+
+To install *both* copies, give each its own `name` and `path`:
+
+```bash
+skills add <alias> amazon-bedrock --path skills/core-skills/amazon-bedrock
+skills add <alias> amazon-bedrock-plugin --path plugins/aws-core/skills/amazon-bedrock
+```
 
 ## `conflict`
 

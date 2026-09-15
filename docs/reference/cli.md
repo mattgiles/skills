@@ -35,7 +35,7 @@ Notes:
 
 ```text
 skills
-├── add <source> <skill> [--url <git-url>] [--ref <ref>] [--global]
+├── add <source> <skill> [--url <git-url>] [--ref <ref>] [--path <dir>] [--global]
 ├── completion
 │   ├── bash
 │   ├── fish
@@ -53,11 +53,11 @@ skills
 ├── config
 │   └── init
 ├── source
-│   ├── add <alias> <git-url> [--ref <ref>] [--global]
+│   ├── add <alias> <git-url> [--ref <ref>] [--include <dir>]... [--exclude <dir>]... [--global]
 │   ├── list [--global]
 │   └── sync [alias...] [--global]
 ├── skill
-│   └── list [--global] [--source <alias>]
+│   └── list [--global] [--source <alias>] [--all]
 └── version
 ```
 
@@ -68,10 +68,22 @@ Adds a skill to the active manifest and immediately runs sync for the same scope
 Behavior:
 
 - if the source alias already exists, only the skill declaration is added
-- if the source alias does not exist, `--url` is required
+- if the source alias does not exist, `--url` is required; `--include`/`--exclude`
+  scope flags are not accepted here — register the source with `skills source
+  add` first when scoping is needed
 - when creating a new source and `--ref` is omitted, `skills` infers the remote default branch
-- if the `(source, skill)` pair is already declared, the command prints a no-op message and exits successfully
+- if the `(source, skill)` pair is already declared and `--path` is omitted or
+  equals the entry's current `path`, the command prints a no-op message and
+  exits successfully
+- if the `(source, skill)` pair is already declared and `--path` differs, the
+  entry's `path:` is updated in place (comments preserved) and sync runs
 - if sync fails after the manifest edit, the command restores the previous manifest bytes
+
+`--path` selects a discovered skill by its repo-relative directory when several
+share a name (see the `Path` column of `skills skill list`). The value is
+normalized (`./`, trailing `/`, and a trailing `SKILL.md` are dropped) before it
+is written. `<skill>` stays the link directory under `.agents/skills/`, so
+`--path` also lets you install a skill under a different name.
 
 Flags:
 
@@ -79,6 +91,7 @@ Flags:
 | --- | --- |
 | `--url <git-url>` | Source Git URL or local repo path for a new source |
 | `--ref <ref>` | Source ref for a new source; defaults to the remote's default branch |
+| `--path <dir>` | Repo-relative skill directory to select when multiple skills share a name (name stays the link directory) |
 | `--global` | Operate on shared home/global installs |
 
 ## `skills completion`
@@ -169,11 +182,21 @@ Behavior:
 
 Registers a source under an alias in the active manifest.
 
+`--include` and `--exclude` are repeatable and set the source's discovery scope
+(repo-relative directory prefixes; see [Project Manifest](project-manifest.md)).
+When a flag is **not** passed, the manifest's current list for that field is
+carried forward, so re-registering a source (for example to change its `ref`)
+does not drop its scope. Passing the flag replaces the whole list. Clearing a
+list is a manual manifest edit. Values are normalized and deduplicated before
+writing; `--exclude .` is rejected.
+
 Flags:
 
 | Flag | Meaning |
 | --- | --- |
 | `--ref <ref>` | Source ref to store in the manifest; defaults to the remote's default branch |
+| `--include <dir>` | Repo-relative directory to search for skills (repeatable; omit to keep the manifest's current list) |
+| `--exclude <dir>` | Repo-relative directory to skip when discovering skills (repeatable; omit to keep the manifest's current list) |
 | `--global` | Write to the shared home manifest instead of the current repo manifest |
 
 ## `skills source list`
@@ -218,12 +241,20 @@ Lists discovered skills from synced source repos.
 
 By default it uses the current repo manifest sources. Use `--global` to inspect the shared home manifest instead. Discovery resolves each source's manifest ref against the fetched canonical repo state, so newly fetched upstream skills appear even if the local checkout `HEAD` has not moved.
 
+The listing honors each source's `include`/`exclude` scope by default. `--all`
+bypasses the scope and appends a `Scope` column (`included`/`excluded`) so you
+can see what to include or exclude.
+
+Columns: `Source`, `Name`, `Path` (repo-relative skill directory), then `Scope`
+with `--all`, then `Abs Path` with `--verbose`.
+
 Flags:
 
 | Flag | Meaning |
 | --- | --- |
 | `--global` | List skills from shared global sources instead of the current repo |
 | `--source <alias>` | Only list skills from the named source |
+| `--all` | Ignore source include/exclude scope and list every discovered skill |
 
 ## `skills status`
 

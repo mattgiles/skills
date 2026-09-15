@@ -62,9 +62,11 @@ func validateSourceAlias(alias string) error {
 	return config.ValidateAlias(alias)
 }
 
-func newManifestSource(url string, ref string) project.ManifestSource {
+func newManifestSource(url string, ref string, include []string, exclude []string) project.ManifestSource {
 	return project.ManifestSource{
-		URL: url,
-		Ref: ref,
+		URL:     url,
+		Ref:     ref,
+		Include: include,
+		Exclude: exclude,
 	}
 }

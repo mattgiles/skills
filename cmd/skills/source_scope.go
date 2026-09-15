@@ -7,9 +7,18 @@ import (
 	"strings"
 
 	"github.com/mattgiles/skills/internal/config"
+	"github.com/mattgiles/skills/internal/discovery"
 	"github.com/mattgiles/skills/internal/project"
 	"github.com/mattgiles/skills/internal/source"
 )
+
+// scopeForSource builds the discovery scope declared on a manifest source.
+func scopeForSource(entry project.ManifestSource) discovery.Scope {
+	return discovery.Scope{
+		Include: entry.Include,
+		Exclude: entry.Exclude,
+	}
+}
 
 type sourceManifestTarget struct {
 	Scope        commandScope

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -30,6 +29,8 @@ func newSourceCommand() *cobra.Command {
 func newSourceAddCommand() *cobra.Command {
 	var global bool
 	var ref string
+	var include []string
+	var exclude []string
 
 	cmd := &cobra.Command{
 		Use:   "add <alias> <git-url>",
@@ -65,18 +66,72 @@ func newSourceAddCommand() *cobra.Command {
 				}
 			}
 
-			if err := project.UpsertManifestSourceAt(target.ManifestPath, alias, newManifestSource(url, sourceRef)); err != nil {
+			// Carry forward the existing scope lists unless the flag was passed:
+			// UpsertManifestSourceAt replaces the whole source mapping, so
+			// omitting them here would silently drop scope on re-registration.
+			existing := target.Manifest.Sources[alias]
+			includeList := existing.Include
+			if cmd.Flags().Changed("include") {
+				includeList = normalizeScopeEntries(include)
+			}
+			excludeList := existing.Exclude
+			if cmd.Flags().Changed("exclude") {
+				excludeList = normalizeScopeEntries(exclude)
+			}
+
+			manifestSource := newManifestSource(url, sourceRef, includeList, excludeList)
+			if err := project.ValidateManifest(project.Manifest{Sources: map[string]project.ManifestSource{alias: manifestSource}}); err != nil {
+				return err
+			}
+			if err := project.UpsertManifestSourceAt(target.ManifestPath, alias, manifestSource); err != nil {
 				return err
 			}
 
-			view.Successf("registered source %q", alias)
+			view.Successf("registered source %q%s", alias, describeScope(includeList, excludeList))
 			return nil
 		},
 	}
 
 	cmd.Flags().BoolVar(&global, "global", false, "Operate on shared home/global sources")
 	cmd.Flags().StringVar(&ref, "ref", "", "Source ref to store in the manifest; defaults to the remote's default branch")
+	cmd.Flags().StringArrayVar(&include, "include", nil, "Repo-relative directory to search for skills (repeatable; omit to keep the manifest's current list)")
+	cmd.Flags().StringArrayVar(&exclude, "exclude", nil, "Repo-relative directory to skip when discovering skills (repeatable; omit to keep the manifest's current list)")
 	return cmd
+}
+
+// normalizeScopeEntries normalizes, drops blanks from, and dedupes a list of
+// include/exclude flag values while preserving first-seen order.
+func normalizeScopeEntries(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		normalized := discovery.NormalizeSkillPath(value)
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	return out
+}
+
+// describeScope renders a " (include: a, b; exclude: c)" suffix for the
+// registration success message, or "" when both lists are empty.
+func describeScope(include []string, exclude []string) string {
+	parts := make([]string, 0, 2)
+	if len(include) > 0 {
+		parts = append(parts, "include: "+strings.Join(include, ", "))
+	}
+	if len(exclude) > 0 {
+		parts = append(parts, "exclude: "+strings.Join(exclude, ", "))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, "; ") + ")"
 }
 
 func newSourceListCommand() *cobra.Command {
@@ -216,6 +271,7 @@ func newSourceSyncCommand() *cobra.Command {
 func newSkillCommand() *cobra.Command {
 	var sourceAlias string
 	var global bool
+	var all bool
 
 	cmd := &cobra.Command{
 		Use:   "skill",
@@ -227,7 +283,15 @@ func newSkillCommand() *cobra.Command {
 		Short: "List discovered skills",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			view := ui.New(cmd)
-			selected, err := skillListSources(cmd.Context(), global, sourceAlias)
+			target, err := resolveSourceManifestTarget(cmd.Context(), global)
+			if err != nil {
+				return err
+			}
+			aliases := []string{}
+			if sourceAlias != "" {
+				aliases = append(aliases, sourceAlias)
+			}
+			selected, err := selectManifestSources(target.Manifest, target.RepoRoot, aliases, global)
 			if err != nil {
 				return err
 			}
@@ -237,6 +301,9 @@ func newSkillCommand() *cobra.Command {
 			}
 
 			skills := []discovery.DiscoveredSkill{}
+			// excludedKeys records "<alias>\x00<relative-path>" for skills the
+			// source scope filtered out; only populated with --all.
+			excludedKeys := map[string]struct{}{}
 			for _, src := range selected {
 				status := source.Status(cmd.Context(), src)
 				if !status.Exists || !status.IsGitRepo {
@@ -253,7 +320,17 @@ func newSkillCommand() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("discover skills in %s at %s: %w", src.Alias, commit[:12], err)
 				}
-				skills = append(skills, discovered...)
+
+				scope := scopeForSource(target.Manifest.Sources[src.Alias])
+				kept, excluded := discovery.FilterScope(discovered, scope)
+				if all {
+					for _, skill := range excluded {
+						excludedKeys[src.Alias+"\x00"+skill.RelativePath] = struct{}{}
+					}
+					skills = append(skills, discovered...)
+				} else {
+					skills = append(skills, kept...)
+				}
 			}
 
 			if len(skills) == 0 {
@@ -273,14 +350,24 @@ func newSkillCommand() *cobra.Command {
 
 			rows := make([][]string, 0, len(skills))
 			for _, skill := range skills {
-				if verboseEnabled(cmd) {
-					rows = append(rows, []string{skill.SourceAlias, skill.Name, skill.RelativePath, skill.Path})
-				} else {
-					rows = append(rows, []string{skill.SourceAlias, skill.Name, skill.RelativePath})
+				row := []string{skill.SourceAlias, skill.Name, skill.RelativePath}
+				if all {
+					scopeLabel := "included"
+					if _, excluded := excludedKeys[skill.SourceAlias+"\x00"+skill.RelativePath]; excluded {
+						scopeLabel = "excluded"
+					}
+					row = append(row, scopeLabel)
 				}
+				if verboseEnabled(cmd) {
+					row = append(row, skill.Path)
+				}
+				rows = append(rows, row)
 			}
 
 			columns := []string{"Source", "Name", "Path"}
+			if all {
+				columns = append(columns, "Scope")
+			}
 			if verboseEnabled(cmd) {
 				columns = append(columns, "Abs Path")
 			}
@@ -294,17 +381,10 @@ func newSkillCommand() *cobra.Command {
 
 	listCmd.Flags().BoolVar(&global, "global", false, "List skills from shared global sources instead of the current repo")
 	listCmd.Flags().StringVar(&sourceAlias, "source", "", "Only list skills from the named source")
+	listCmd.Flags().BoolVar(&all, "all", false, "Ignore source include/exclude scope and list every discovered skill")
 	cmd.AddCommand(listCmd)
 
 	return cmd
-}
-
-func skillListSources(ctx context.Context, global bool, sourceAlias string) ([]source.Source, error) {
-	aliases := []string{}
-	if sourceAlias != "" {
-		aliases = append(aliases, sourceAlias)
-	}
-	return resolveManifestSources(ctx, global, aliases)
 }
 
 func renderSourceState(status source.SourceStatus) string {

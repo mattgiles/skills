@@ -119,6 +119,19 @@ func FindMappingValue(mapping *ast.MappingNode, key string) *ast.MappingValueNod
 	return nil
 }
 
+// ScalarString returns the string value of a scalar node, stripping a single
+// layer of surrounding quotes for non-string scalar renderings. A nil node
+// yields "".
+func ScalarString(node ast.Node) string {
+	if node == nil {
+		return ""
+	}
+	if str, ok := node.(*ast.StringNode); ok {
+		return str.Value
+	}
+	return unquoteKey(node.String())
+}
+
 func MappingValue(mapping *ast.MappingNode, key string) (ast.Node, bool) {
 	value := FindMappingValue(mapping, key)
 	if value == nil {
